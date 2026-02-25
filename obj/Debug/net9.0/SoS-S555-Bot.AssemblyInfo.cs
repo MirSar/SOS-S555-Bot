@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SoS-S555-Bot")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2a98594d1775b7524beb0d1d96b602abffadbf47")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+81ebfe213a76e71bfcd76640621c4b0cded2eb35")]
 [assembly: System.Reflection.AssemblyProductAttribute("SoS-S555-Bot")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SoS-S555-Bot")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
