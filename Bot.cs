@@ -221,7 +221,7 @@ namespace SOSS555Bot
 
         private static async Task AppendLogAsync(string line)
         {
-            var logDir = Path.Combine(AppContext.BaseDirectory, "logs");
+            var logDir = AppConfig.LogsDir ?? Path.Combine(AppContext.BaseDirectory, "logs");
             Directory.CreateDirectory(logDir);
             var file = Path.Combine(logDir, "commands.log");
             await _logSemaphore.WaitAsync();
