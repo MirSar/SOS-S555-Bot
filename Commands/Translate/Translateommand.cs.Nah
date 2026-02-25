@@ -38,7 +38,7 @@ namespace SOSS555Bot.Commands.Translate
             }
 
 
-            string APIKey = "DlrNiHRcoqUq42fkNLTzg1hOssA8coMdIdVYo96ltMnZFMi03BbKJQQJ99BEAChHRaEXJ3w3AAAbACOG9UiN";
+            string APIKey = ;
             string APIEndpoint = "api.cognitive.microsofttranslator.com";
             string APIVersion = "3.0";
             string region = "norwayeast"; // Set the region for the translation service

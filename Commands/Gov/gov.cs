@@ -46,7 +46,7 @@ namespace SOSS555Bot.Commands.Gov
                 }
 
                 // role check (keep existing role name if intentional)
-                if (Context.User is SocketGuildUser user && !user.Roles.Any(role => role.Name == "MirBotTelegram"))
+                if (Context.User is SocketGuildUser user && !user.Roles.Any(role => role.Name == "SOS-S555-Access"))
                 {
                     await Context.Message.AddReactionAsync(new Emoji("❌"));
                     return;
