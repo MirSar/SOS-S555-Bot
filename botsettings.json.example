@@ -1,0 +1,8 @@
+{
+  "Paths": {
+    "BaseDir": "D:\\Data\\Dropbox\\Software\\GIT\\SOS-S555-Bot",
+    "DataDir": "D:\\Data\\Dropbox\\Software\\GIT\\SOS-S555-Bot\\data",
+    "LogsDir": "D:\\Data\\Dropbox\\Software\\GIT\\SOS-S555-Bot\\logs"
+  },
+  "DiscordTokenFile": "D:\\Data\\Dropbox\\Software\\GIT\\SOS-S555-Bot\\Discord-token.txt"
+}

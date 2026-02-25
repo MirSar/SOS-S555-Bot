@@ -3,6 +3,28 @@ A Discord bot for State 555 in State of Survival
 
 # Planned features: as discussed in https://discordapp.com/channels/1136616286307229737/1448615839887523881/1475899222149566596
 Discord bot, and I think I could make all the points specified in this message possible quite easily - And customise it to whatever needs people want.
+
+**Configuration**
+
+- Place your Discord token in a file outside the project, for example:
+
+	D:\Data\Dropbox\Software\GIT\SOS-S555-Bot\Discord-token.txt
+
+- Create an external configuration file `botsettings.json` next to the token file to configure shared paths. You can copy the example provided in the repository:
+
+	- Copy the example file to the expected location:
+
+		```powershell
+		Copy-Item .\botsettings.json.example D:\Data\Dropbox\Software\GIT\SOS-S555-Bot\botsettings.json
+		```
+
+	- Edit `botsettings.json` to adjust `Paths.BaseDir`, `Paths.DataDir`, `Paths.LogsDir`, or `DiscordTokenFile` as needed.
+
+- The bot will create/read these items from the configured `DataDir` and `LogsDir` (defaults to the `D:\Data\Dropbox\Software\GIT\SOS-S555-Bot` folder):
+	- registrations: `data/registrations.csv`
+	- votes: `data/votes.csv`
+	- command logs: `logs/commands.log` (JSON lines)
+
 For signing up / keeping track:
 a command to sign yourself up  (EX: !gov register  week 21)
 a command to remove yourself (EX: !gov unregister week 21)
