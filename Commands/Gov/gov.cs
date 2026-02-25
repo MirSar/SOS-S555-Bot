@@ -27,6 +27,38 @@ namespace SOSS555Bot.Commands.Gov
     {
         private static readonly GovStore Store = GovStore.Load();
 
+        private bool CallerHasAdminRole()
+        {
+            if (Context.User is SocketGuildUser gu)
+            {
+                return gu.Roles.Any(r => string.Equals(r.Name, "R4", StringComparison.OrdinalIgnoreCase)
+                                         || string.Equals(r.Name, "R5", StringComparison.OrdinalIgnoreCase));
+            }
+            return false;
+        }
+
+        private ulong? ResolveUserIdFromArg(string arg)
+        {
+            if (string.IsNullOrWhiteSpace(arg)) return null;
+            // strip non-digits to support mentions like <@12345> or <@!12345>
+            var digits = new string(arg.Where(char.IsDigit).ToArray());
+            if (ulong.TryParse(digits, out var id)) return id;
+
+            // try to resolve by username or username#discriminator within the guild
+            try
+            {
+                if (Context.Guild != null)
+                {
+                    var user = Context.Guild.Users.FirstOrDefault(u => string.Equals(u.Username, arg, StringComparison.OrdinalIgnoreCase)
+                                                                       || string.Equals($"{u.Username}#{u.Discriminator}", arg, StringComparison.OrdinalIgnoreCase));
+                    if (user != null) return user.Id;
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
         private const int MinWeek = 1;
         private const int MaxWeek = 53;
 
@@ -110,8 +142,34 @@ namespace SOSS555Bot.Commands.Gov
                 return;
             }
 
-            Store.Register(normalized, Context.User.Id);
-            await ReplyAsync($"{Context.User.Username} registered for '{normalized}'.");
+            // Default to self-registration
+            ulong targetUserId = Context.User.Id;
+            string targetName = Context.User.Username;
+
+            // If caller provided a target and has admin role, resolve and use it
+            if (parts.Length >= 3)
+            {
+                if (!CallerHasAdminRole())
+                {
+                    await ReplyAsync("You don't have permission to register other users.");
+                    return;
+                }
+
+                var resolved = ResolveUserIdFromArg(parts[2]);
+                if (resolved == null)
+                {
+                    await ReplyAsync("Could not resolve the target user. Use a mention or user id.");
+                    return;
+                }
+                targetUserId = resolved.Value;
+                targetName = GetUsernameForGuild(targetUserId);
+            }
+
+            Store.Register(normalized, targetUserId);
+            if (targetUserId == Context.User.Id)
+                await ReplyAsync($"{Context.User.Username} registered for '{normalized}'.");
+            else
+                await ReplyAsync($"{targetName} was registered for '{normalized}' by {Context.User.Username}.");
         }
 
         private async Task HandleUnregister(string[] parts)
@@ -129,11 +187,44 @@ namespace SOSS555Bot.Commands.Gov
                 return;
             }
 
-            var removed = Store.Unregister(normalized, Context.User.Id);
+            // Default to self-unregister
+            ulong targetUserId = Context.User.Id;
+            string targetName = Context.User.Username;
+
+            // If caller provided a target and has admin role, resolve and use it
+            if (parts.Length >= 3)
+            {
+                if (!CallerHasAdminRole())
+                {
+                    await ReplyAsync("You don't have permission to unregister other users.");
+                    return;
+                }
+
+                var resolved = ResolveUserIdFromArg(parts[2]);
+                if (resolved == null)
+                {
+                    await ReplyAsync("Could not resolve the target user. Use a mention or user id.");
+                    return;
+                }
+                targetUserId = resolved.Value;
+                targetName = GetUsernameForGuild(targetUserId);
+            }
+
+            var removed = Store.Unregister(normalized, targetUserId);
             if (removed)
-                await ReplyAsync($"{Context.User.Username} removed from '{normalized}'.");
+            {
+                if (targetUserId == Context.User.Id)
+                    await ReplyAsync($"{Context.User.Username} removed from '{normalized}'.");
+                else
+                    await ReplyAsync($"{targetName} was removed from '{normalized}' by {Context.User.Username}.");
+            }
             else
-                await ReplyAsync($"{Context.User.Username} was not registered in '{normalized}'.");
+            {
+                if (targetUserId == Context.User.Id)
+                    await ReplyAsync($"{Context.User.Username} was not registered in '{normalized}'.");
+                else
+                    await ReplyAsync($"{targetName} was not registered in '{normalized}'.");
+            }
         }
 
         private async Task HandleList(string[] parts)
