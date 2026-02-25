@@ -1,10 +1,7 @@
-using System.Reflection;
+﻿using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using System;
 using System.Threading.Tasks;
-using System.IO;
-using System.Text.Json;
-using System.Threading;
 using Discord;
 using Discord.Commands;
 using Discord.WebSocket;
@@ -17,8 +14,6 @@ namespace SOSS555Bot
         private readonly DiscordSocketClient _client;
         private readonly CommandService _commands;
         private IServiceProvider _serviceProvider;
-
-        private static readonly SemaphoreSlim _logSemaphore = new(1, 1);
 
         public Bot(IConfiguration configuration)
         {
@@ -77,6 +72,7 @@ namespace SOSS555Bot
                 {
                     await _client.LoginAsync(TokenType.Bot, token);
                 }
+                    private static readonly SemaphoreSlim _logSemaphore = new(1,1);
                 catch (Exception ex)
                 {
                     // More informative failure if login fails (invalid token, network)
@@ -136,7 +132,29 @@ namespace SOSS555Bot
             }
         }
 
-        /// <summary>
+                            var logLine = JsonSerializer.Serialize(new
+                            {
+                                Timestamp = DateTime.UtcNow,
+                                Server = server,
+                                User = user,
+                                Command = commandText,
+                                Success = success,
+                                Result = resultText,
+                                ChannelId = context.Channel?.Id,
+                                MessageId = context.Message?.Id
+                            });
+
+                            Console.WriteLine($"[Command] {DateTime.UtcNow:O} Server: {server} User: {user} Command: \"{commandText}\" Success: {success} Result: {resultText}");
+
+                            // Write JSON log line to file (append). Non-blocking but safe for concurrency.
+                            try
+                            {
+                                _ = AppendLogAsync(logLine);
+                            }
+                            catch
+                            {
+                                // Swallow logging errors to avoid affecting bot runtime
+                            }
         /// Handles incoming messages and checks if they are commands.
         /// </summary>
         /// <param name="arg">The incoming message.</param>
@@ -149,9 +167,9 @@ namespace SOSS555Bot
             // Ignore messages from bots
             if (arg is not SocketUserMessage message || message.Author.IsBot)
             {
+                // Console.WriteLine("Ignoring message from bot: " + arg.Author.ToString());
                 return;
             }
-
             // Check if the message is a command
             int position = 0;
             if (message.HasCharPrefix('!', ref position))
@@ -191,47 +209,9 @@ namespace SOSS555Bot
                     resultText = $"Exception: {ex.GetType().Name}: {ex.Message}";
                 }
 
-                var logLine = JsonSerializer.Serialize(new
-                {
-                    Timestamp = DateTime.UtcNow,
-                    Server = server,
-                    User = user,
-                    Command = commandText,
-                    Success = success,
-                    Result = resultText,
-                    ChannelId = context.Channel?.Id,
-                    MessageId = context.Message?.Id
-                });
-
                 Console.WriteLine($"[Command] {DateTime.UtcNow:O} Server: {server} User: {user} Command: \"{commandText}\" Success: {success} Result: {resultText}");
 
-                // Write JSON log line to file (append). Fire-and-forget but thread-safe.
-                try
-                {
-                    _ = AppendLogAsync(logLine);
-                }
-                catch
-                {
-                    // Swallow logging errors to avoid affecting bot runtime
-                }
-
                 return;
-            }
-        }
-
-        private static async Task AppendLogAsync(string line)
-        {
-            var logDir = Path.Combine(AppContext.BaseDirectory, "logs");
-            Directory.CreateDirectory(logDir);
-            var file = Path.Combine(logDir, "commands.log");
-            await _logSemaphore.WaitAsync();
-            try
-            {
-                await File.AppendAllTextAsync(file, line + Environment.NewLine);
-            }
-            finally
-            {
-                try { _logSemaphore.Release(); } catch { }
             }
         }
     }
