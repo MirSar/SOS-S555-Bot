@@ -1,4 +1,4 @@
-# SOS-S555-Bot
+# SOSS555Bot
 A Discord bot for State 555 in State of Survival
 
 # Planned features: as discussed in https://discordapp.com/channels/1136616286307229737/1448615839887523881/1475899222149566596
