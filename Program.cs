@@ -22,11 +22,20 @@ namespace SOSS555Bot
                 .AddUserSecrets(Assembly.GetExecutingAssembly(), optional: true)
                 .Build();
 
-            // Determine token file location:
-            //  - First check config key "DiscordTokenFile"
-            //  - If not set, default to the path you requested
+            // Prefer reading an optional external JSON config located alongside the token file.
+            // Determine token file location first (may be overridden by appsettings)
             var tokenFilePath = baseConfig["DiscordTokenFile"] ??
                                 @"D:\Data\Dropbox\Software\GIT\SOS-S555-Bot\Discord-token.txt";
+
+            // If there's a JSON config in the same folder as the token file, load it too (overrides appsettings)
+            string externalConfigPath = null;
+            try
+            {
+                var tokenDir = Path.GetDirectoryName(tokenFilePath) ?? @"D:\Data\Dropbox\Software\GIT\SOS-S555-Bot";
+                var candidate = Path.Combine(tokenDir, "botsettings.json");
+                if (File.Exists(candidate)) externalConfigPath = candidate;
+            }
+            catch { }
 
             string tokenFromFile = null;
             try
@@ -47,30 +56,24 @@ namespace SOSS555Bot
                 Console.Error.WriteLine($"Failed to read token file '{tokenFilePath}': {ex.Message}");
             }
 
-            // Compose final configuration: baseConfig overridden by tokenFromFile (if present)
+            // Compose final configuration: baseConfig, then optional external config, then token override if present
             IConfiguration configuration;
+            var builder = new ConfigurationBuilder()
+                .AddConfiguration(baseConfig);
+
+            if (!string.IsNullOrWhiteSpace(externalConfigPath))
+                builder.AddJsonFile(externalConfigPath, optional: true, reloadOnChange: true);
+
             if (!string.IsNullOrWhiteSpace(tokenFromFile))
             {
                 var dict = new Dictionary<string, string> { { "DiscordToken", tokenFromFile } };
-                configuration = new ConfigurationBuilder()
-                    .AddConfiguration(baseConfig)
-                    .AddInMemoryCollection(dict)
-                    .Build();
+                builder.AddInMemoryCollection(dict);
             }
-            else if (!string.IsNullOrWhiteSpace(baseConfig["DiscordToken"]))
-            {
-                // token present in appsettings/user-secrets — accept it but warn
-                Console.Error.WriteLine("Warning: Discord token found in configuration sources (appsettings/user-secrets). " +
-                                        "Consider moving it to an external file and set 'DiscordTokenFile' in configuration.");
-                configuration = baseConfig;
-            }
-            else
-            {
-                Console.Error.WriteLine("No Discord token found. Please place the token in a file and/or set 'DiscordTokenFile' in appsettings or user-secrets.");
-                Console.Error.WriteLine($"Expected token file (example): {tokenFilePath}");
-                Environment.Exit(-1);
-                return;
-            }
+
+            configuration = builder.Build();
+
+            // Initialize AppConfig (paths and token file defaults)
+            AppConfig.Initialize(configuration);
 
             // Diagnostic: only indicate presence, not the token value
             Console.WriteLine("DiscordToken present in configuration: " + (!string.IsNullOrWhiteSpace(configuration["DiscordToken"])));

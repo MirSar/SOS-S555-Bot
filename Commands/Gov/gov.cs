@@ -302,7 +302,7 @@ namespace SOSS555Bot.Commands.Gov
 
             static GovStore()
             {
-                DataDir = Path.Combine(AppContext.BaseDirectory, "data");
+                DataDir = AppConfig.DataDir ?? Path.Combine(AppContext.BaseDirectory, "data");
                 Directory.CreateDirectory(DataDir);
                 RegistrationsFile = Path.Combine(DataDir, "registrations.csv");
                 VotesFile = Path.Combine(DataDir, "votes.csv");
