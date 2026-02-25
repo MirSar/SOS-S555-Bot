@@ -152,10 +152,15 @@ namespace SOSS555Bot
             if (message.HasCharPrefix('!', ref position))
             {
                 // Execute the command if it exists in the ServiceCollection
-                await _commands.ExecuteAsync(
-                    new SocketCommandContext(_client, message),
-                    position,
-                    _serviceProvider);
+                var context = new SocketCommandContext(_client, message);
+                var commandText = message.Content.Substring(position).Trim();
+                var result = await _commands.ExecuteAsync(context, position, _serviceProvider);
+
+                var server = context.Guild != null ? $"{context.Guild.Name} ({context.Guild.Id})" : "DirectMessage";
+                var user = $"{context.User.Username}#{context.User.Discriminator} ({context.User.Id})";
+                var resultText = (result != null && result.IsSuccess) ? "Success" : (result != null ? $"Error: {result.ErrorReason}" : "Unknown result");
+
+                Console.WriteLine($"[Command] {DateTime.UtcNow:O} Server: {server} User: {user} Command: \"{commandText}\" Result: {resultText}");
 
                 return;
             }
