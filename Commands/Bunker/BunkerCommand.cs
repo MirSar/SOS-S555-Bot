@@ -56,158 +56,114 @@ namespace SOSS555Bot.Commands.Bunker
         [Alias("bunk")]
         [RequireContext(ContextType.Guild)]
         [RequireUserPermission(GuildPermission.SendMessages)]
-        public async Task ExecuteAsync([Remainder][Summary("A message or subcommand")] string message)
+        public async Task ExecuteAsync([Remainder][Summary("A message or subcommand")] string message = null)
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(message))
-                {
-                    await ReplyAsync("Usage: !bunker <register|unregister|list> [bunker]");
-                    return;
-                }
-
-                var parts = message.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                var subcommand = parts[0].ToLowerInvariant();
-
-                switch (subcommand)
-                {
-                    case "register":
-                        await HandleRegister(parts);
-                        break;
-                    case "unregister":
-                    case "unreg":
-                        await HandleUnregister(parts);
-                        break;
-                    case "list":
-                        await HandleList();
-                        break;
-                    default:
-                        await ReplyAsync("Unknown subcommand. Usage: !bunker <register|unregister|list> [bunker]");
-                        break;
-                }
+                // Post the bunker registration message with reactions
+                await PostBunkerRegistrationMessage();
             }
             catch (Exception ex)
             {
-                await ReplyAsync($"Error : {ex.Message}");
+                await ReplyAsync($"Error: {ex.Message}");
             }
         }
 
-        private async Task HandleRegister(string[] parts)
+        private async Task PostBunkerRegistrationMessage()
         {
-            if (!CallerHasAdminRole())
-            {
-                await ReplyAsync("You don't have permission to register for bunkers. Only R4/R5 users can register.");
-                return;
-            }
-
-            if (parts.Length < 2)
-            {
-                await ReplyAsync($"Usage: !bunker register <bunker> (Valid bunkers: {string.Join(", ", ValidBunkers)})");
-                return;
-            }
-
-            var bunker = parts[1].ToUpper();
-            if (!ValidBunkers.Contains(bunker))
-            {
-                await ReplyAsync($"Invalid bunker. Valid options: {string.Join(", ", ValidBunkers)}");
-                return;
-            }
-
-            var allianceTag = GetAllianceTagFromUser();
-            var userId = Context.User.Id;
-
-            // Check if user already has 3 registrations
-            var userRegistrations = Store.GetUserRegistrationCount(userId);
-            if (userRegistrations >= MaxRegistrationsPerUser)
-            {
-                await ReplyAsync($"You can only register for a maximum of {MaxRegistrationsPerUser} bunkers. You currently have {userRegistrations}.");
-                return;
-            }
-
-            // Check if user is already registered for this bunker
-            if (Store.IsUserRegisteredForBunker(userId, bunker))
-            {
-                await ReplyAsync($"You are already registered for {bunker}.");
-                return;
-            }
-
-            Store.Register(bunker, userId, allianceTag);
-            await ReplyAsync($"{Context.User.Username} ({allianceTag}) registered for bunker {bunker}.");
-        }
-
-        private async Task HandleUnregister(string[] parts)
-        {
-            if (!CallerHasAdminRole())
-            {
-                await ReplyAsync("You don't have permission to unregister from bunkers. Only R4/R5 users can unregister.");
-                return;
-            }
-
-            if (parts.Length < 2)
-            {
-                await ReplyAsync($"Usage: !bunker unregister <bunker> (Valid bunkers: {string.Join(", ", ValidBunkers)})");
-                return;
-            }
-
-            var bunker = parts[1].ToUpper();
-            if (!ValidBunkers.Contains(bunker))
-            {
-                await ReplyAsync($"Invalid bunker. Valid options: {string.Join(", ", ValidBunkers)}");
-                return;
-            }
-
-            var userId = Context.User.Id;
-            var removed = Store.Unregister(bunker, userId);
-            
-            if (removed)
-            {
-                await ReplyAsync($"{Context.User.Username} unregistered from bunker {bunker}.");
-            }
-            else
-            {
-                await ReplyAsync($"You were not registered for bunker {bunker}.");
-            }
-        }
-
-        private async Task HandleList()
-        {
-            var registrations = Store.GetAllRegistrations();
-            if (registrations == null || registrations.Count == 0)
-            {
-                await ReplyAsync("No bunker registrations found.");
-                return;
-            }
-
             var builder = new StringBuilder();
-            builder.AppendLine("**Bunker Registrations:**");
+            builder.AppendLine("**Bunker Registration** - React to register/unregister for bunkers (max 3 per user)");
+            builder.AppendLine();
+            
+            var bunkerEmojis = BunkerManager.BunkerEmojis;
+            var bunkerList = BunkerManager.BunkerList;
+
+            builder.AppendLine("**Front:**");
+            for (int i = 0; i < 4; i++)
+            {
+                var registrations = Store.GetAllRegistrations();
+                var alliances = registrations.ContainsKey(bunkerList[i])
+                    ? string.Join(", ", registrations[bunkerList[i]])
+                    : "(empty)";
+                builder.AppendLine($"{bunkerEmojis[i]} {bunkerList[i]} - {alliances}");
+            }
             builder.AppendLine();
 
-            var bunkerGroups = new[] 
-            { 
-                ("**Front:**", new[] { "F1", "F2", "F3", "F4" }),
-                ("**Back:**", new[] { "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", "B11", "B12" })
-            };
-
-            foreach (var (groupName, bunkers) in bunkerGroups)
+            builder.AppendLine("**Back:**");
+            for (int i = 4; i < bunkerList.Length; i++)
             {
-                builder.AppendLine(groupName);
-                foreach (var bunker in bunkers)
-                {
-                    var alliances = registrations.ContainsKey(bunker) 
-                        ? string.Join(", ", registrations[bunker]) 
-                        : "(empty)";
-                    builder.AppendLine($"{bunker} - {alliances}");
-                }
-                builder.AppendLine();
+                var registrations = Store.GetAllRegistrations();
+                var alliances = registrations.ContainsKey(bunkerList[i])
+                    ? string.Join(", ", registrations[bunkerList[i]])
+                    : "(empty)";
+                builder.AppendLine($"{bunkerEmojis[i]} {bunkerList[i]} - {alliances}");
             }
 
-            await ReplyAsync(builder.ToString());
+            var msg = await ReplyAsync(builder.ToString());
+
+            // Add all reaction options
+            foreach (var emoji in bunkerEmojis)
+            {
+                await msg.AddReactionAsync(new Emoji(emoji));
+            }
+
+            BunkerManager.RegisterMessage(msg.Id, msg.Channel as ISocketMessageChannel);
         }
 
-        private void UpdateBunkerDisplay()
+        // Bunker registration manager for handling reactions
+        public static class BunkerManager
         {
-            // This could be extended to update a pinned message or embed
-            // For now, just a placeholder
+            public static readonly string[] BunkerEmojis = 
+            {
+                "1️⃣", "2️⃣", "3️⃣", "4️⃣",           // F1-F4
+                "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟",  // B1-B6
+                "🇦", "🇧", "🇨", "🇩", "🇪", "🇫"   // B7-B12
+            };
+
+            public static readonly string[] BunkerList =
+            {
+                "F1", "F2", "F3", "F4", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", "B11", "B12"
+            };
+
+            private static readonly Dictionary<ulong, ISocketMessageChannel> _registrationMessages
+                = new Dictionary<ulong, ISocketMessageChannel>();
+
+            public static void RegisterMessage(ulong messageId, ISocketMessageChannel channel)
+            {
+                _registrationMessages[messageId] = channel;
+            }
+
+            public static Task<bool> TryHandleReactionAsync(SocketReaction reaction, IUserMessage message, string allianceTag)
+            {
+                if (!_registrationMessages.ContainsKey(reaction.MessageId))
+                    return Task.FromResult(false);
+
+                // Map emoji to bunker index
+                var emoji = reaction.Emote.Name;
+                int bunkerIndex = Array.IndexOf(BunkerEmojis, emoji);
+                if (bunkerIndex < 0)
+                    return Task.FromResult(false);
+
+                var bunker = BunkerList[bunkerIndex];
+                var userId = reaction.UserId;
+
+                // Toggle registration: if already registered, unregister; otherwise register
+                if (Store.IsUserRegisteredForBunker(userId, bunker))
+                {
+                    Store.Unregister(bunker, userId);
+                }
+                else
+                {
+                    // Check limit
+                    if (Store.GetUserRegistrationCount(userId) >= MaxRegistrationsPerUser)
+                    {
+                        return Task.FromResult(false); // User at max, don't register
+                    }
+                    Store.Register(bunker, userId, allianceTag);
+                }
+
+                return Task.FromResult(true);
+            }
         }
 
         // Simple CSV-backed store

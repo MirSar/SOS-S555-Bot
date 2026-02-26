@@ -228,11 +228,38 @@ namespace SOSS555Bot
                 var message = await cached.GetOrDownloadAsync();
                 if (message != null)
                 {
-                    // try delegate to Gov vote manager with async handling
+                    // Try gov vote handler first
                     if (await SOSS555Bot.Commands.Gov.Gov.VoteManager.TryHandleReactionAsync(reaction, message))
                     {
-                        // optionally log or ack
                         Console.WriteLine($"[Vote] {reaction.UserId} reacted {reaction.Emote.Name} on message {reaction.MessageId}");
+                        return;
+                    }
+
+                    // Try bunker registration handler
+                    var guild = (message.Channel as SocketGuildChannel)?.Guild;
+                    if (guild != null && message.Author.IsBot)
+                    {
+                        var user = guild.GetUser(reaction.UserId);
+                        if (user != null)
+                        {
+                            // Check R4/R5 permission
+                            bool hasPermission = user.Roles.Any(r => 
+                                string.Equals(r.Name, "R4", StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(r.Name, "R5", StringComparison.OrdinalIgnoreCase));
+
+                            if (hasPermission)
+                            {
+                                // Get alliance tag from user's 3-letter role
+                                var allianceRole = user.Roles.FirstOrDefault(r => 
+                                    r.Name.Length == 3 && r.Name.All(char.IsLetter));
+                                var allianceTag = allianceRole?.Name.ToUpper() ?? "UNKNOWN";
+
+                                if (await SOSS555Bot.Commands.Bunker.BunkerCommand.BunkerManager.TryHandleReactionAsync(reaction, message, allianceTag))
+                                {
+                                    Console.WriteLine($"[Bunker] {reaction.UserId} registered/unregistered via {reaction.Emote.Name} on message {reaction.MessageId}");
+                                }
+                            }
+                        }
                     }
                 }
             }
