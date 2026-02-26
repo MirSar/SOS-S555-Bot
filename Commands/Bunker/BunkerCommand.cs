@@ -133,16 +133,16 @@ namespace SOSS555Bot.Commands.Bunker
                 _registrationMessages[messageId] = message;
             }
 
-            public static Task<(bool Success, bool ShouldRemoveReaction)> TryHandleReactionAsync(SocketReaction reaction, IUserMessage message, string allianceTag)
+            public static Task<(bool Success, string BunkerRemoved)> TryHandleReactionAsync(SocketReaction reaction, IUserMessage message, string allianceTag)
             {
                 if (!_registrationMessages.ContainsKey(reaction.MessageId))
-                    return Task.FromResult((false, false));
+                    return Task.FromResult((false, (string)null));
 
                 // Map emoji to bunker index
                 var emoji = reaction.Emote.Name;
                 int bunkerIndex = Array.IndexOf(BunkerEmojis, emoji);
                 if (bunkerIndex < 0)
-                    return Task.FromResult((false, false));
+                    return Task.FromResult((false, (string)null));
 
                 var bunker = BunkerList[bunkerIndex];
                 var userId = reaction.UserId;
@@ -151,20 +151,25 @@ namespace SOSS555Bot.Commands.Bunker
                 if (Store.IsUserRegisteredForBunker(userId, bunker))
                 {
                     Store.Unregister(bunker, userId);
-                    return Task.FromResult((true, false)); // Successfully unregistered
+                    return Task.FromResult((true, (string)null)); // Successfully unregistered
                 }
                 else
                 {
-                    // Check limit
+                    // If user at limit, remove oldest registration first and return which one was removed
                     if (Store.GetUserRegistrationCount(userId) >= MaxRegistrationsPerUser)
                     {
-                        // User at max, remove the invalid reaction
-                        return Task.FromResult((false, true));
+                        var removed = Store.RemoveOldestRegistrationForUser(userId);
+                        // After removal, proceed to register the new bunker
+                        Store.Register(bunker, userId, allianceTag);
+                        return Task.FromResult((true, removed));
                     }
+
                     Store.Register(bunker, userId, allianceTag);
-                    return Task.FromResult((true, false)); // Successfully registered
+                    return Task.FromResult((true, (string)null)); // Successfully registered
                 }
             }
+
+            
 
             public static async Task UpdateMessageDisplayAsync(ulong messageId)
             {
@@ -221,9 +226,9 @@ namespace SOSS555Bot.Commands.Bunker
             private static readonly object Sync = new object();
             private const string Delim = "|";
 
-            // In-memory cache: bunker -> List<(userId, allianceTag)>
-            private Dictionary<string, List<(ulong userId, string allianceTag)>> Registrations
-                = new Dictionary<string, List<(ulong, string)>>(StringComparer.OrdinalIgnoreCase);
+            // In-memory cache: bunker -> List<(userId, allianceTag, timestampMs)>
+            private Dictionary<string, List<(ulong userId, string allianceTag, long ts)>> Registrations
+                = new Dictionary<string, List<(ulong, string, long)>>(StringComparer.OrdinalIgnoreCase);
 
             static BunkerStore()
             {
@@ -265,11 +270,14 @@ namespace SOSS555Bot.Commands.Bunker
                                     continue;
 
                                 var allianceTag = parts[2].Trim();
+                                long ts = 0;
+                                if (parts.Length >= 4 && long.TryParse(parts[3].Trim(), out var parsedTs))
+                                    ts = parsedTs;
 
                                 if (!Registrations.ContainsKey(bunker))
-                                    Registrations[bunker] = new List<(ulong, string)>();
+                                    Registrations[bunker] = new List<(ulong, string, long)>();
 
-                                Registrations[bunker].Add((userId, allianceTag));
+                                Registrations[bunker].Add((userId, allianceTag, ts));
                             }
                         }
                     }
@@ -292,10 +300,10 @@ namespace SOSS555Bot.Commands.Bunker
                             foreach (var kvp in Registrations)
                             {
                                 var bunker = kvp.Key;
-                                foreach (var (userId, allianceTag) in kvp.Value)
-                                {
-                                    writer.WriteLine($"{bunker}{Delim}{userId}{Delim}{allianceTag}");
-                                }
+                                    foreach (var (userId, allianceTag, ts) in kvp.Value)
+                                    {
+                                        writer.WriteLine($"{bunker}{Delim}{userId}{Delim}{allianceTag}{Delim}{ts}");
+                                    }
                             }
                         }
                     }
@@ -311,17 +319,46 @@ namespace SOSS555Bot.Commands.Bunker
                 lock (Sync)
                 {
                     if (!Registrations.ContainsKey(bunker))
-                        Registrations[bunker] = new List<(ulong, string)>();
+                        Registrations[bunker] = new List<(ulong, string, long)>();
 
-                    // Remove user from all other bunkers first (should not happen normally)
-                    foreach (var kv in Registrations.Values)
-                        kv.RemoveAll(x => x.userId == userId);
+                    // Only add if not already registered for this bunker.
+                    if (Registrations[bunker].Any(x => x.userId == userId))
+                        return;
 
-                    // Add to new bunker (if not already there)
-                    if (!Registrations[bunker].Any(x => x.userId == userId))
-                        Registrations[bunker].Add((userId, allianceTag));
-
+                    Registrations[bunker].Add((userId, allianceTag, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
                     Persist();
+                }
+            }
+
+            /// <summary>
+            /// Removes the oldest registration (by timestamp) for the given user across all bunkers.
+            /// Returns the bunker name that was removed, or null if none removed.
+            /// </summary>
+            public string RemoveOldestRegistrationForUser(ulong userId)
+            {
+                lock (Sync)
+                {
+                    string foundBunker = null;
+                    long oldestTs = long.MaxValue;
+                    foreach (var kvp in Registrations)
+                    {
+                        foreach (var entry in kvp.Value.Where(x => x.userId == userId))
+                        {
+                            if (entry.ts < oldestTs)
+                            {
+                                oldestTs = entry.ts;
+                                foundBunker = kvp.Key;
+                            }
+                        }
+                    }
+
+                    if (foundBunker != null)
+                    {
+                        Registrations[foundBunker].RemoveAll(x => x.userId == userId);
+                        Persist();
+                    }
+
+                    return foundBunker;
                 }
             }
 
