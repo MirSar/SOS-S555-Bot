@@ -44,4 +44,12 @@ some "admin" commands to override, but only should be used if the player themsel
 
 For selecting if multiple people have signed up (completely randomly):
 Select a random gov (EX: !gov raffle week 21)
-Or a voting system (EX: !gov vote week 21)
+
+Voting is now reaction‑based. An administrator (role **R5**) starts a vote for a given week by listing the candidates as mentions or ids:
+
+```
+!gov vote week21 @Alice @Bob @Charlie
+```
+
+The bot will post a message showing each option numbered and add the corresponding reactions (1️⃣…9️⃣).
+Participants cast their vote by reacting; the results are collected automatically. Once started, further `!gov vote` text commands are ignored.
