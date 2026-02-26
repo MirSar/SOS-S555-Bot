@@ -48,12 +48,13 @@ namespace SOSS555Bot.Commands.Gov
         /// </summary>
         public static class VoteManager
         {
-            private static readonly Dictionary<ulong, (string poll, List<string> options)> _active
-                = new Dictionary<ulong, (string, List<string>)>();
+            // messageId -> (poll, candidateIds)
+            private static readonly Dictionary<ulong, (string poll, List<ulong> candidateIds)> _active
+                = new Dictionary<ulong, (string, List<ulong>)>();
 
-            public static void RegisterVote(ulong messageId, string poll, List<string> options)
+            public static void RegisterVote(ulong messageId, string poll, List<ulong> candidateIds)
             {
-                _active[messageId] = (poll, options);
+                _active[messageId] = (poll, candidateIds);
             }
 
             public static bool TryHandleReaction(SocketReaction reaction)
@@ -64,11 +65,11 @@ namespace SOSS555Bot.Commands.Gov
                 // map emoji to index
                 var emoji = reaction.Emote.Name;
                 int idx = Array.IndexOf(NumberEmojis, emoji);
-                if (idx <= 0 || idx > data.options.Count)
+                if (idx <= 0 || idx > data.candidateIds.Count)
                     return false;
 
-                var option = data.options[idx - 1];
-                CastVoteStatic(data.poll, option, reaction.UserId);
+                var candidateId = data.candidateIds[idx - 1];
+                CastVoteStatic(data.poll, candidateId.ToString(), reaction.UserId);
                 return true;
             }
 
@@ -412,27 +413,29 @@ namespace SOSS555Bot.Commands.Gov
                     return;
                 }
 
-                var options = new List<string>();
+                // Build display names list for the message
+                var displayNames = new List<string>();
                 foreach (var id in members)
                 {
-                    options.Add(await GetUsernameForGuildAsync(id));
+                    displayNames.Add(await GetUsernameForGuildAsync(id));
                 }
 
                 var builder = new StringBuilder();
                 builder.AppendLine($"Vote started for '{normalized}':");
-                for (int i = 0; i < options.Count && i < 9; i++)
+                for (int i = 0; i < displayNames.Count && i < 9; i++)
                 {
-                    builder.AppendLine($"{i+1}. {options[i]}");
+                    builder.AppendLine($"{i+1}. {displayNames[i]}");
                 }
 
                 var msg = await ReplyAsync(builder.ToString());
-                int reactCount = Math.Min(options.Count, 9);
+                int reactCount = Math.Min(members.Count, 9);
                 for (int i = 1; i <= reactCount; i++)
                 {
                     await msg.AddReactionAsync(new Emoji(Gov.VoteManager.NumberEmojis[i]));
                 }
 
-                Gov.VoteManager.RegisterVote(msg.Id, normalized, options);
+                // Register vote with candidate IDs (not display names)
+                Gov.VoteManager.RegisterVote(msg.Id, normalized, members.Take(9).ToList());
                 return;
             }
 
