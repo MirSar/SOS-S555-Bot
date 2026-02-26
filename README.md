@@ -25,6 +25,16 @@ Discord bot, and I think I could make all the points specified in this message p
 	- votes: `data/votes.csv`
 	- command logs: `logs/commands.log` (JSON lines)
 
+	**Roles and Permissions**
+
+	- **SOS-S555-Access**: Required to use the `!gov` command group (subcommands: `register`, `unregister`, `list`, `raffle`, `vote`). If a user does not have this role, the bot will reject `!gov` requests.
+	- **R4 / R5**: Administrative roles that are allowed to register or unregister *other* users. Example usages:
+		- `!gov register week21 @SomeUser` — registers the mentioned user (caller must have `R4` or `R5`).
+		- `!gov unregister week21 123456789012345678` — unregisters the user by id (caller must have `R4` or `R5`).
+	- **Send Messages** (Discord permission): Required to use generic commands like `!echo`; the bot enforces `RequireUserPermission(GuildPermission.SendMessages)` on several command modules.
+
+	Note: Role checks are currently done by role name. If you prefer using role IDs (recommended for stability), I can update the code to check role IDs instead.
+
 For signing up / keeping track:
 a command to sign yourself up  (EX: !gov register  week 21)
 a command to remove yourself (EX: !gov unregister week 21)
