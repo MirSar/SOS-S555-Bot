@@ -37,6 +37,47 @@ namespace SOSS555Bot.Commands.Gov
             return false;
         }
 
+        // helper for external code (Bot) to record votes
+        public static void CastVoteStatic(string poll, string option, ulong userId)
+        {
+            Store.CastVote(poll, option, userId);
+        }
+
+        /// <summary>
+        /// Manages active, in‑progress reaction-based votes.
+        /// </summary>
+        public static class VoteManager
+        {
+            private static readonly Dictionary<ulong, (string poll, List<string> options)> _active
+                = new Dictionary<ulong, (string, List<string>)>();
+
+            public static void RegisterVote(ulong messageId, string poll, List<string> options)
+            {
+                _active[messageId] = (poll, options);
+            }
+
+            public static bool TryHandleReaction(SocketReaction reaction)
+            {
+                if (!_active.TryGetValue(reaction.MessageId, out var data))
+                    return false;
+
+                // map emoji to index
+                var emoji = reaction.Emote.Name;
+                int idx = Array.IndexOf(NumberEmojis, emoji);
+                if (idx <= 0 || idx > data.options.Count)
+                    return false;
+
+                var option = data.options[idx - 1];
+                CastVoteStatic(data.poll, option, reaction.UserId);
+                return true;
+            }
+
+            private static readonly string[] NumberEmojis =
+            {
+                null, "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"
+            };
+        }
+
         private ulong? ResolveUserIdFromArg(string arg)
         {
             if (string.IsNullOrWhiteSpace(arg)) return null;
@@ -319,67 +360,55 @@ namespace SOSS555Bot.Commands.Gov
 
         private async Task HandleVote(string[] parts)
         {
-            if (parts.Length < 3)
+            // admin starts the vote based on week and target list
+            if (CallerHasAdminRole())
             {
-                // support subcommands: list/result
-                if (parts.Length >= 2)
+                if (parts.Length < 3)
                 {
-                    var sub = parts[1].ToLowerInvariant();
-                    if (sub == "list")
-                    {
-                        await ReplyAsync("Usage: !gov vote list <poll>");
-                        return;
-                    }
-                    if (sub == "result")
-                    {
-                        await ReplyAsync("Usage: !gov vote result <poll>");
-                        return;
-                    }
-                }
-
-                await ReplyAsync("Usage: !gov vote <poll> <option> | !gov vote list <poll> | !gov vote result <poll>");
-                return;
-            }
-
-            // list / result special handlers (support both styles: '!gov vote list poll' and '!gov vote result poll')
-            var subOrPoll = parts[1].ToLowerInvariant();
-            if (subOrPoll == "list" && parts.Length >= 3)
-            {
-                var pollName = parts[2];
-                var counts = Store.GetVoteCounts(pollName);
-                if (counts == null || counts.Count == 0)
-                {
-                    await ReplyAsync($"No votes for poll '{pollName}'.");
+                    await ReplyAsync("Usage: !gov vote <week> <user1> <user2> [...]");
                     return;
                 }
 
-                var lines = counts.Select(kv => $"{kv.Key}: {kv.Value}");
-                await ReplyAsync($"Vote counts for '{pollName}':\n" + string.Join("\n", lines));
-                return;
-            }
-
-            if (subOrPoll == "result" && parts.Length >= 3)
-            {
-                var pollName = parts[2];
-                var counts = Store.GetVoteCounts(pollName);
-                if (counts == null || counts.Count == 0)
+                var normalized = NormalizeWeekGroup(parts[1]);
+                if (normalized == null)
                 {
-                    await ReplyAsync($"No votes for poll '{pollName}'.");
+                    await ReplyAsync($"Invalid week. Provide a week number between {MinWeek} and {MaxWeek}.");
                     return;
                 }
 
-                var winner = counts.OrderByDescending(kv => kv.Value).First();
-                await ReplyAsync($"Poll '{pollName}' winner: {winner.Key} ({winner.Value} votes)");
+                var options = new List<string>();
+                foreach (var arg in parts.Skip(2))
+                {
+                    var id = ResolveUserIdFromArg(arg);
+                    options.Add(id != null ? GetUsernameForGuild(id.Value) : arg);
+                }
+
+                if (options.Count < 2)
+                {
+                    await ReplyAsync("Need at least two options/users to start a vote.");
+                    return;
+                }
+
+                var builder = new StringBuilder();
+                builder.AppendLine($"Vote started for '{normalized}':");
+                for (int i = 0; i < options.Count && i < 9; i++)
+                {
+                    builder.AppendLine($"{i+1}. {options[i]}");
+                }
+
+                var msg = await ReplyAsync(builder.ToString());
+                int reactCount = Math.Min(options.Count, 9);
+                for (int i = 1; i <= reactCount; i++)
+                {
+                    await msg.AddReactionAsync(new Emoji(Gov.VoteManager.NumberEmojis[i]));
+                }
+
+                Gov.VoteManager.RegisterVote(msg.Id, normalized, options);
                 return;
             }
 
-            // standard vote: !gov vote poll option...
-            var poll = parts[1];
-            var option = string.Join(' ', parts.Skip(2));
-            Store.CastVote(poll, option, Context.User.Id);
-            var currentCounts = Store.GetVoteCounts(poll);
-            var formatted = currentCounts.Select(kv => $"{kv.Key}: {kv.Value}");
-            await ReplyAsync($"Vote recorded for '{poll}' -> '{option}'. Current counts:\n" + string.Join("\n", formatted));
+            // non-admin old behaviour is no longer supported
+            await ReplyAsync("Voting is now handled via reactions; only R5 users can start a vote.");
         }
 
         // Simple CSV-backed store
