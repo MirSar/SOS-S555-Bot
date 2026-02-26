@@ -368,9 +368,9 @@ namespace SOSS555Bot.Commands.Gov
             }
             if (isR5)
             {
-                if (parts.Length < 3)
+                if (parts.Length < 2)
                 {
-                    await ReplyAsync("Usage: !gov vote <week> <user1> <user2> [...]");
+                    await ReplyAsync("Usage: !gov vote <week>");
                     return;
                 }
 
@@ -381,18 +381,15 @@ namespace SOSS555Bot.Commands.Gov
                     return;
                 }
 
-                var options = new List<string>();
-                foreach (var arg in parts.Skip(2))
+                // load current registrations for the week
+                var members = Store.GetRegistrations(normalized);
+                if (members == null || members.Count < 2)
                 {
-                    var id = ResolveUserIdFromArg(arg);
-                    options.Add(id != null ? GetUsernameForGuild(id.Value) : arg);
-                }
-
-                if (options.Count < 2)
-                {
-                    await ReplyAsync("Need at least two options/users to start a vote.");
+                    await ReplyAsync($"Need at least two registered users for '{normalized}' to start a vote.");
                     return;
                 }
+
+                var options = members.Select(id => $"<@{id}>").ToList();
 
                 var builder = new StringBuilder();
                 builder.AppendLine($"Vote started for '{normalized}':");
