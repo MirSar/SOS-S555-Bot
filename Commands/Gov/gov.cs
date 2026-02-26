@@ -320,7 +320,7 @@ namespace SOSS555Bot.Commands.Gov
                 {
                     var user = guild.GetUser(userId);
                     if (user != null)
-                        return user.Username; // not mentioning, just username
+                        return $"@{user.Username}"; // return @username format
                 }
             }
             catch
@@ -328,7 +328,7 @@ namespace SOSS555Bot.Commands.Gov
                 // fall through to fallback
             }
 
-            return userId.ToString();
+            return $"@{userId}"; // fallback includes @ prefix
         }
 
         private async Task HandleRaffle(string[] parts)
@@ -354,8 +354,8 @@ namespace SOSS555Bot.Commands.Gov
             winnersCount = Math.Max(1, Math.Min(winnersCount, members.Count));
             var rnd = new Random();
             var winners = members.OrderBy(_ => rnd.Next()).Take(winnersCount).ToList();
-            var mentions = winners.Select(id => $"<@{id}>");
-            await ReplyAsync($"Raffle winners for '{group}': {string.Join(", ", mentions)}");
+            var names = winners.Select(id => GetUsernameForGuild(id));
+            await ReplyAsync($"Raffle winners for '{group}': {string.Join(", ", names)}");
         }
 
         private async Task HandleVote(string[] parts)
@@ -389,7 +389,7 @@ namespace SOSS555Bot.Commands.Gov
                     return;
                 }
 
-                var options = members.Select(id => $"<@{id}>").ToList();
+                var options = members.Select(id => GetUsernameForGuild(id)).ToList();
 
                 var builder = new StringBuilder();
                 builder.AppendLine($"Vote started for '{normalized}':");
