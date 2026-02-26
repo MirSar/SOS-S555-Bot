@@ -315,6 +315,7 @@ namespace SOSS555Bot.Commands.Gov
         {
             try
             {
+                // Try to get user from current guild first
                 var guild = Context.Guild;
                 if (guild != null)
                 {
@@ -322,6 +323,11 @@ namespace SOSS555Bot.Commands.Gov
                     if (user != null)
                         return $"@{user.Username}"; // return @username format
                 }
+
+                // If not in guild, try bot's global user cache
+                var globalUser = Context.Client.GetUser(userId);
+                if (globalUser != null)
+                    return $"@{globalUser.Username}";
             }
             catch
             {
