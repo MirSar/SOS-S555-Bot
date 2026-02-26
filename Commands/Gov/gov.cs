@@ -203,7 +203,7 @@ namespace SOSS555Bot.Commands.Gov
                     return;
                 }
                 targetUserId = resolved.Value;
-                targetName = GetUsernameForGuild(targetUserId);
+                targetName = await GetUsernameForGuildAsync(targetUserId);
             }
 
             Store.Register(normalized, targetUserId);
@@ -248,7 +248,7 @@ namespace SOSS555Bot.Commands.Gov
                     return;
                 }
                 targetUserId = resolved.Value;
-                targetName = GetUsernameForGuild(targetUserId);
+                targetName = await GetUsernameForGuildAsync(targetUserId);
             }
 
             var removed = Store.Unregister(normalized, targetUserId);
@@ -284,7 +284,11 @@ namespace SOSS555Bot.Commands.Gov
                 foreach (var key in keys)
                 {
                     var members = Store.GetRegistrations(key);
-                    var names = members.Select(id => GetUsernameForGuild(id)).ToList();
+                    var names = new List<string>();
+                    foreach (var id in members)
+                    {
+                        names.Add(await GetUsernameForGuildAsync(id));
+                    }
                     lines.Add($"{key}: {string.Join(", ", names)}");
                 }
 
@@ -306,12 +310,16 @@ namespace SOSS555Bot.Commands.Gov
                     return;
                 }
 
-                var names = members.Select(id => GetUsernameForGuild(id));
+                var names = new List<string>();
+                foreach (var id in members)
+                {
+                    names.Add(await GetUsernameForGuildAsync(id));
+                }
                 await ReplyAsync($"Registered in '{normalized}':\n" + string.Join("\n", names));
             }
         }
 
-        private string GetUsernameForGuild(ulong userId)
+        private async Task<string> GetUsernameForGuildAsync(ulong userId)
         {
             try
             {
@@ -321,13 +329,18 @@ namespace SOSS555Bot.Commands.Gov
                 {
                     var user = guild.GetUser(userId);
                     if (user != null)
-                        return $"@{user.Username}"; // return @username format
+                        return $"@{user.Username}";
                 }
 
                 // If not in guild, try bot's global user cache
                 var globalUser = Context.Client.GetUser(userId);
                 if (globalUser != null)
                     return $"@{globalUser.Username}";
+
+                // If still not found, fetch from API
+                var fetchedUser = await Context.Client.GetUserAsync(userId);
+                if (fetchedUser != null)
+                    return $"@{fetchedUser.Username}";
             }
             catch
             {
@@ -360,7 +373,11 @@ namespace SOSS555Bot.Commands.Gov
             winnersCount = Math.Max(1, Math.Min(winnersCount, members.Count));
             var rnd = new Random();
             var winners = members.OrderBy(_ => rnd.Next()).Take(winnersCount).ToList();
-            var names = winners.Select(id => GetUsernameForGuild(id));
+            var names = new List<string>();
+            foreach (var id in winners)
+            {
+                names.Add(await GetUsernameForGuildAsync(id));
+            }
             await ReplyAsync($"Raffle winners for '{group}': {string.Join(", ", names)}");
         }
 
@@ -395,7 +412,11 @@ namespace SOSS555Bot.Commands.Gov
                     return;
                 }
 
-                var options = members.Select(id => GetUsernameForGuild(id)).ToList();
+                var options = new List<string>();
+                foreach (var id in members)
+                {
+                    options.Add(await GetUsernameForGuildAsync(id));
+                }
 
                 var builder = new StringBuilder();
                 builder.AppendLine($"Vote started for '{normalized}':");
