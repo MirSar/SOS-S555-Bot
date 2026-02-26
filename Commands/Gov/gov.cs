@@ -360,8 +360,13 @@ namespace SOSS555Bot.Commands.Gov
 
         private async Task HandleVote(string[] parts)
         {
-            // admin starts the vote based on week and target list
-            if (CallerHasAdminRole())
+            // only R5 users may start a reaction-based vote
+            bool isR5 = false;
+            if (Context.User is SocketGuildUser gu)
+            {
+                isR5 = gu.Roles.Any(r => string.Equals(r.Name, "R5", StringComparison.OrdinalIgnoreCase));
+            }
+            if (isR5)
             {
                 if (parts.Length < 3)
                 {
@@ -407,7 +412,7 @@ namespace SOSS555Bot.Commands.Gov
                 return;
             }
 
-            // non-admin old behaviour is no longer supported
+            // non-R5 users can't initiate votes
             await ReplyAsync("Voting is now handled via reactions; only R5 users can start a vote.");
         }
 
