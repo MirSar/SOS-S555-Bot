@@ -254,7 +254,22 @@ namespace SOSS555Bot
                                     r.Name.Length == 3 && r.Name.All(char.IsLetter));
                                 var allianceTag = allianceRole?.Name.ToUpper() ?? "UNKNOWN";
 
-                                if (await SOSS555Bot.Commands.Bunker.BunkerCommand.BunkerManager.TryHandleReactionAsync(reaction, message, allianceTag))
+                                var (success, shouldRemoveReaction) = await SOSS555Bot.Commands.Bunker.BunkerCommand.BunkerManager.TryHandleReactionAsync(reaction, message, allianceTag);
+                                
+                                if (shouldRemoveReaction)
+                                {
+                                    // Remove reaction if user exceeded max registrations
+                                    try
+                                    {
+                                        await message.RemoveReactionAsync(reaction.Emote, reaction.User.Value);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Console.Error.WriteLine($"[Bunker] Failed to remove reaction: {ex.Message}");
+                                    }
+                                    Console.WriteLine($"[Bunker] {reaction.UserId} exceeded max 3 registrations, removed invalid reaction {reaction.Emote.Name}");
+                                }
+                                else if (success)
                                 {
                                     Console.WriteLine($"[Bunker] {reaction.UserId} registered/unregistered via {reaction.Emote.Name} on message {reaction.MessageId}");
                                     // Update the message display with new registrations

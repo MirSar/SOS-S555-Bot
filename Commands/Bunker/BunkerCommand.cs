@@ -133,16 +133,16 @@ namespace SOSS555Bot.Commands.Bunker
                 _registrationMessages[messageId] = message;
             }
 
-            public static Task<bool> TryHandleReactionAsync(SocketReaction reaction, IUserMessage message, string allianceTag)
+            public static Task<(bool Success, bool ShouldRemoveReaction)> TryHandleReactionAsync(SocketReaction reaction, IUserMessage message, string allianceTag)
             {
                 if (!_registrationMessages.ContainsKey(reaction.MessageId))
-                    return Task.FromResult(false);
+                    return Task.FromResult((false, false));
 
                 // Map emoji to bunker index
                 var emoji = reaction.Emote.Name;
                 int bunkerIndex = Array.IndexOf(BunkerEmojis, emoji);
                 if (bunkerIndex < 0)
-                    return Task.FromResult(false);
+                    return Task.FromResult((false, false));
 
                 var bunker = BunkerList[bunkerIndex];
                 var userId = reaction.UserId;
@@ -151,18 +151,19 @@ namespace SOSS555Bot.Commands.Bunker
                 if (Store.IsUserRegisteredForBunker(userId, bunker))
                 {
                     Store.Unregister(bunker, userId);
+                    return Task.FromResult((true, false)); // Successfully unregistered
                 }
                 else
                 {
                     // Check limit
                     if (Store.GetUserRegistrationCount(userId) >= MaxRegistrationsPerUser)
                     {
-                        return Task.FromResult(false); // User at max, don't register
+                        // User at max, remove the invalid reaction
+                        return Task.FromResult((false, true));
                     }
                     Store.Register(bunker, userId, allianceTag);
+                    return Task.FromResult((true, false)); // Successfully registered
                 }
-
-                return Task.FromResult(true);
             }
 
             public static async Task UpdateMessageDisplayAsync(ulong messageId)
