@@ -51,13 +51,18 @@ namespace SOSS555Bot.Commands.Gov
             // messageId -> (poll, candidateIds)
             private static readonly Dictionary<ulong, (string poll, List<ulong> candidateIds)> _active
                 = new Dictionary<ulong, (string, List<ulong>)>();
+            // messageId -> (userId -> emoji) to track user votes for removal
+            private static readonly Dictionary<ulong, Dictionary<ulong, IEmote>> _userReactions
+                = new Dictionary<ulong, Dictionary<ulong, IEmote>>();
 
             public static void RegisterVote(ulong messageId, string poll, List<ulong> candidateIds)
             {
                 _active[messageId] = (poll, candidateIds);
+                if (!_userReactions.ContainsKey(messageId))
+                    _userReactions[messageId] = new Dictionary<ulong, IEmote>();
             }
 
-            public static bool TryHandleReaction(SocketReaction reaction)
+            public static async Task<bool> TryHandleReactionAsync(SocketReaction reaction, IUserMessage message)
             {
                 if (!_active.TryGetValue(reaction.MessageId, out var data))
                     return false;
@@ -70,6 +75,26 @@ namespace SOSS555Bot.Commands.Gov
 
                 var candidateId = data.candidateIds[idx - 1];
                 CastVoteStatic(data.poll, candidateId.ToString(), reaction.UserId);
+
+                // Track this reaction and remove old ones from the user
+                if (_userReactions.TryGetValue(reaction.MessageId, out var userEmotes))
+                {
+                    if (userEmotes.TryGetValue(reaction.UserId, out var oldEmote))
+                    {
+                        // Remove old reaction
+                        try
+                        {
+                            await message.RemoveReactionAsync(oldEmote, reaction.UserId);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine($"[Vote] Failed to remove old reaction: {ex.Message}");
+                        }
+                    }
+                    // Update to new reaction
+                    userEmotes[reaction.UserId] = reaction.Emote;
+                }
+
                 return true;
             }
 

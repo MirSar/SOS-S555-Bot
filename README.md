@@ -33,6 +33,7 @@ Discord bot, and I think I could make all the points specified in this message p
 		- `!gov register week21 @SomeUser` — registers the mentioned user (caller must have `R4` or `R5`).
 		- `!gov unregister week21 123456789012345678` — unregisters the user by id (caller must have `R4` or `R5`).
 	- **Send Messages** (Discord permission): Required to use generic commands like `!echo`; the bot enforces `RequireUserPermission(GuildPermission.SendMessages)` on several command modules.
+	- **Manage Messages** (Discord permission): Required for the voting system to remove invalid reactions when users change their votes. The bot removes old reactions automatically to keep the vote UI clean.
 
 	**Username Display**
 

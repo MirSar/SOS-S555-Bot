@@ -222,13 +222,24 @@ namespace SOSS555Bot
         {
             // ignore bot's own reactions
             if (reaction.UserId == _client.CurrentUser.Id) return;
-            // try delegate to Gov vote manager
-            if (SOSS555Bot.Commands.Gov.Gov.VoteManager.TryHandleReaction(reaction))
+            try
             {
-                // optionally log or ack
-                Console.WriteLine($"[Vote] {reaction.UserId} reacted {reaction.Emote.Name} on message {reaction.MessageId}");
+                // Get the actual message to allow reaction removal
+                var message = await cached.GetOrDownloadAsync();
+                if (message != null)
+                {
+                    // try delegate to Gov vote manager with async handling
+                    if (await SOSS555Bot.Commands.Gov.Gov.VoteManager.TryHandleReactionAsync(reaction, message))
+                    {
+                        // optionally log or ack
+                        Console.WriteLine($"[Vote] {reaction.UserId} reacted {reaction.Emote.Name} on message {reaction.MessageId}");
+                    }
+                }
             }
-            await Task.CompletedTask;
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Reaction] Error handling reaction: {ex.Message}");
+            }
         }
 
         private static async Task AppendLogAsync(string line)
