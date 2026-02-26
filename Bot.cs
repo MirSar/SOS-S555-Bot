@@ -254,20 +254,28 @@ namespace SOSS555Bot
                                     r.Name.Length == 3 && r.Name.All(char.IsLetter));
                                 var allianceTag = allianceRole?.Name.ToUpper() ?? "UNKNOWN";
 
-                                var (success, isInvalid) = await SOSS555Bot.Commands.Bunker.BunkerCommand.BunkerManager.TryHandleReactionAsync(reaction, message, allianceTag);
+                                var (success, bunkerRemoved) = await SOSS555Bot.Commands.Bunker.BunkerCommand.BunkerManager.TryHandleReactionAsync(reaction, message, allianceTag);
 
-                                if (isInvalid)
+                                if (!string.IsNullOrEmpty(bunkerRemoved))
                                 {
-                                    // Remove the invalid reaction (user exceeded 3-registration limit)
+                                    // Remove the reaction corresponding to the oldest bunker that was removed
                                     try
                                     {
-                                        await message.RemoveReactionAsync(reaction.Emote, reaction.User.Value);
-                                        Console.WriteLine($"[Bunker] Removed invalid reaction {reaction.Emote.Name} for user {reaction.UserId} (exceeded 3-registration limit)");
+                                        int idx = Array.IndexOf(SOSS555Bot.Commands.Bunker.BunkerCommand.BunkerManager.BunkerList, bunkerRemoved);
+                                        if (idx >= 0)
+                                        {
+                                            var emojiToRemove = SOSS555Bot.Commands.Bunker.BunkerCommand.BunkerManager.BunkerEmojis[idx];
+                                            await message.RemoveReactionAsync(new Emoji(emojiToRemove), reaction.UserId);
+                                            Console.WriteLine($"[Bunker] Removed oldest registration {bunkerRemoved} reaction for user {reaction.UserId}");
+                                        }
                                     }
                                     catch (Exception ex)
                                     {
-                                        Console.Error.WriteLine($"[Bunker] Failed to remove invalid reaction: {ex.Message}");
+                                        Console.Error.WriteLine($"[Bunker] Failed to remove oldest reaction: {ex.Message}");
                                     }
+
+                                    // Update the message display after swap
+                                    await SOSS555Bot.Commands.Bunker.BunkerCommand.BunkerManager.UpdateMessageDisplayAsync(reaction.MessageId);
                                 }
                                 else if (success)
                                 {
