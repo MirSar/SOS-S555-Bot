@@ -257,6 +257,8 @@ namespace SOSS555Bot
                                 if (await SOSS555Bot.Commands.Bunker.BunkerCommand.BunkerManager.TryHandleReactionAsync(reaction, message, allianceTag))
                                 {
                                     Console.WriteLine($"[Bunker] {reaction.UserId} registered/unregistered via {reaction.Emote.Name} on message {reaction.MessageId}");
+                                    // Update the message display with new registrations
+                                    await SOSS555Bot.Commands.Bunker.BunkerCommand.BunkerManager.UpdateMessageDisplayAsync(reaction.MessageId);
                                 }
                             }
                         }

@@ -107,7 +107,7 @@ namespace SOSS555Bot.Commands.Bunker
                 await msg.AddReactionAsync(new Emoji(emoji));
             }
 
-            BunkerManager.RegisterMessage(msg.Id, msg.Channel as ISocketMessageChannel);
+            BunkerManager.RegisterMessage(msg.Id, msg);
         }
 
         // Bunker registration manager for handling reactions
@@ -125,12 +125,12 @@ namespace SOSS555Bot.Commands.Bunker
                 "F1", "F2", "F3", "F4", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", "B11", "B12"
             };
 
-            private static readonly Dictionary<ulong, ISocketMessageChannel> _registrationMessages
-                = new Dictionary<ulong, ISocketMessageChannel>();
+            private static readonly Dictionary<ulong, IUserMessage> _registrationMessages
+                = new Dictionary<ulong, IUserMessage>();
 
-            public static void RegisterMessage(ulong messageId, ISocketMessageChannel channel)
+            public static void RegisterMessage(ulong messageId, IUserMessage message)
             {
-                _registrationMessages[messageId] = channel;
+                _registrationMessages[messageId] = message;
             }
 
             public static Task<bool> TryHandleReactionAsync(SocketReaction reaction, IUserMessage message, string allianceTag)
@@ -163,6 +163,52 @@ namespace SOSS555Bot.Commands.Bunker
                 }
 
                 return Task.FromResult(true);
+            }
+
+            public static async Task UpdateMessageDisplayAsync(ulong messageId)
+            {
+                if (!_registrationMessages.TryGetValue(messageId, out var message))
+                    return;
+
+                var content = BuildRegistrationContent();
+                try
+                {
+                    await message.ModifyAsync(m => m.Content = content);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[Bunker] Failed to update message: {ex.Message}");
+                }
+            }
+
+            private static string BuildRegistrationContent()
+            {
+                var builder = new StringBuilder();
+                builder.AppendLine("**Bunker Registration** - React to register/unregister for bunkers (max 3 per user)");
+                builder.AppendLine();
+                
+                var registrations = Store.GetAllRegistrations();
+
+                builder.AppendLine("**Front:**");
+                for (int i = 0; i < 4; i++)
+                {
+                    var alliances = registrations.ContainsKey(BunkerList[i])
+                        ? string.Join(", ", registrations[BunkerList[i]])
+                        : "(empty)";
+                    builder.AppendLine($"{BunkerEmojis[i]} {BunkerList[i]} - {alliances}");
+                }
+                builder.AppendLine();
+
+                builder.AppendLine("**Back:**");
+                for (int i = 4; i < BunkerList.Length; i++)
+                {
+                    var alliances = registrations.ContainsKey(BunkerList[i])
+                        ? string.Join(", ", registrations[BunkerList[i]])
+                        : "(empty)";
+                    builder.AppendLine($"{BunkerEmojis[i]} {BunkerList[i]} - {alliances}");
+                }
+
+                return builder.ToString();
             }
         }
 
