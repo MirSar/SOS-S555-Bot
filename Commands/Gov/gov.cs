@@ -37,6 +37,73 @@ namespace SOSS555Bot.Commands.Gov
             return false;
         }
 
+        // helper for external code (Bot) to record votes
+        public static void CastVoteStatic(string poll, string option, ulong userId)
+        {
+            Store.CastVote(poll, option, userId);
+        }
+
+        /// <summary>
+        /// Manages active, in‑progress reaction-based votes.
+        /// </summary>
+        public static class VoteManager
+        {
+            // messageId -> (poll, candidateIds)
+            private static readonly Dictionary<ulong, (string poll, List<ulong> candidateIds)> _active
+                = new Dictionary<ulong, (string, List<ulong>)>();
+            // messageId -> (userId -> emoji) to track user votes for removal
+            private static readonly Dictionary<ulong, Dictionary<ulong, IEmote>> _userReactions
+                = new Dictionary<ulong, Dictionary<ulong, IEmote>>();
+
+            public static void RegisterVote(ulong messageId, string poll, List<ulong> candidateIds)
+            {
+                _active[messageId] = (poll, candidateIds);
+                if (!_userReactions.ContainsKey(messageId))
+                    _userReactions[messageId] = new Dictionary<ulong, IEmote>();
+            }
+
+            public static async Task<bool> TryHandleReactionAsync(SocketReaction reaction, IUserMessage message)
+            {
+                if (!_active.TryGetValue(reaction.MessageId, out var data))
+                    return false;
+
+                // map emoji to index
+                var emoji = reaction.Emote.Name;
+                int idx = Array.IndexOf(NumberEmojis, emoji);
+                if (idx <= 0 || idx > data.candidateIds.Count)
+                    return false;
+
+                var candidateId = data.candidateIds[idx - 1];
+                CastVoteStatic(data.poll, candidateId.ToString(), reaction.UserId);
+
+                // Track this reaction and remove old ones from the user
+                if (_userReactions.TryGetValue(reaction.MessageId, out var userEmotes))
+                {
+                    if (userEmotes.TryGetValue(reaction.UserId, out var oldEmote))
+                    {
+                        // Remove old reaction
+                        try
+                        {
+                            await message.RemoveReactionAsync(oldEmote, reaction.UserId);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine($"[Vote] Failed to remove old reaction: {ex.Message}");
+                        }
+                    }
+                    // Update to new reaction
+                    userEmotes[reaction.UserId] = reaction.Emote;
+                }
+
+                return true;
+            }
+
+            public static readonly string[] NumberEmojis =
+            {
+                null, "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"
+            };
+        }
+
         private ulong? ResolveUserIdFromArg(string arg)
         {
             if (string.IsNullOrWhiteSpace(arg)) return null;
@@ -162,7 +229,7 @@ namespace SOSS555Bot.Commands.Gov
                     return;
                 }
                 targetUserId = resolved.Value;
-                targetName = GetUsernameForGuild(targetUserId);
+                targetName = await GetUsernameForGuildAsync(targetUserId);
             }
 
             Store.Register(normalized, targetUserId);
@@ -207,7 +274,7 @@ namespace SOSS555Bot.Commands.Gov
                     return;
                 }
                 targetUserId = resolved.Value;
-                targetName = GetUsernameForGuild(targetUserId);
+                targetName = await GetUsernameForGuildAsync(targetUserId);
             }
 
             var removed = Store.Unregister(normalized, targetUserId);
@@ -243,7 +310,11 @@ namespace SOSS555Bot.Commands.Gov
                 foreach (var key in keys)
                 {
                     var members = Store.GetRegistrations(key);
-                    var names = members.Select(id => GetUsernameForGuild(id)).ToList();
+                    var names = new List<string>();
+                    foreach (var id in members)
+                    {
+                        names.Add(await GetUsernameForGuildAsync(id));
+                    }
                     lines.Add($"{key}: {string.Join(", ", names)}");
                 }
 
@@ -265,29 +336,44 @@ namespace SOSS555Bot.Commands.Gov
                     return;
                 }
 
-                var names = members.Select(id => GetUsernameForGuild(id));
+                var names = new List<string>();
+                foreach (var id in members)
+                {
+                    names.Add(await GetUsernameForGuildAsync(id));
+                }
                 await ReplyAsync($"Registered in '{normalized}':\n" + string.Join("\n", names));
             }
         }
 
-        private string GetUsernameForGuild(ulong userId)
+        private async Task<string> GetUsernameForGuildAsync(ulong userId)
         {
             try
             {
+                // Try to get user from current guild first
                 var guild = Context.Guild;
                 if (guild != null)
                 {
                     var user = guild.GetUser(userId);
                     if (user != null)
-                        return user.Username; // not mentioning, just username
+                        return $"@{user.Username}";
                 }
+
+                // If not in guild, try bot's global user cache
+                var globalUser = Context.Client.GetUser(userId);
+                if (globalUser != null)
+                    return $"@{globalUser.Username}";
+
+                // If still not found, fetch from API
+                var fetchedUser = await Context.Client.GetUserAsync(userId);
+                if (fetchedUser != null)
+                    return $"@{fetchedUser.Username}";
             }
             catch
             {
                 // fall through to fallback
             }
 
-            return userId.ToString();
+            return $"@{userId}"; // fallback includes @ prefix
         }
 
         private async Task HandleRaffle(string[] parts)
@@ -313,73 +399,73 @@ namespace SOSS555Bot.Commands.Gov
             winnersCount = Math.Max(1, Math.Min(winnersCount, members.Count));
             var rnd = new Random();
             var winners = members.OrderBy(_ => rnd.Next()).Take(winnersCount).ToList();
-            var mentions = winners.Select(id => $"<@{id}>");
-            await ReplyAsync($"Raffle winners for '{group}': {string.Join(", ", mentions)}");
+            var names = new List<string>();
+            foreach (var id in winners)
+            {
+                names.Add(await GetUsernameForGuildAsync(id));
+            }
+            await ReplyAsync($"Raffle winners for '{group}': {string.Join(", ", names)}");
         }
 
         private async Task HandleVote(string[] parts)
         {
-            if (parts.Length < 3)
+            // only R5 users may start a reaction-based vote
+            bool isR5 = false;
+            if (Context.User is SocketGuildUser gu)
             {
-                // support subcommands: list/result
-                if (parts.Length >= 2)
-                {
-                    var sub = parts[1].ToLowerInvariant();
-                    if (sub == "list")
-                    {
-                        await ReplyAsync("Usage: !gov vote list <poll>");
-                        return;
-                    }
-                    if (sub == "result")
-                    {
-                        await ReplyAsync("Usage: !gov vote result <poll>");
-                        return;
-                    }
-                }
-
-                await ReplyAsync("Usage: !gov vote <poll> <option> | !gov vote list <poll> | !gov vote result <poll>");
-                return;
+                isR5 = gu.Roles.Any(r => string.Equals(r.Name, "R5", StringComparison.OrdinalIgnoreCase));
             }
-
-            // list / result special handlers (support both styles: '!gov vote list poll' and '!gov vote result poll')
-            var subOrPoll = parts[1].ToLowerInvariant();
-            if (subOrPoll == "list" && parts.Length >= 3)
+            if (isR5)
             {
-                var pollName = parts[2];
-                var counts = Store.GetVoteCounts(pollName);
-                if (counts == null || counts.Count == 0)
+                if (parts.Length < 2)
                 {
-                    await ReplyAsync($"No votes for poll '{pollName}'.");
+                    await ReplyAsync("Usage: !gov vote <week>");
                     return;
                 }
 
-                var lines = counts.Select(kv => $"{kv.Key}: {kv.Value}");
-                await ReplyAsync($"Vote counts for '{pollName}':\n" + string.Join("\n", lines));
-                return;
-            }
-
-            if (subOrPoll == "result" && parts.Length >= 3)
-            {
-                var pollName = parts[2];
-                var counts = Store.GetVoteCounts(pollName);
-                if (counts == null || counts.Count == 0)
+                var normalized = NormalizeWeekGroup(parts[1]);
+                if (normalized == null)
                 {
-                    await ReplyAsync($"No votes for poll '{pollName}'.");
+                    await ReplyAsync($"Invalid week. Provide a week number between {MinWeek} and {MaxWeek}.");
                     return;
                 }
 
-                var winner = counts.OrderByDescending(kv => kv.Value).First();
-                await ReplyAsync($"Poll '{pollName}' winner: {winner.Key} ({winner.Value} votes)");
+                // load current registrations for the week
+                var members = Store.GetRegistrations(normalized);
+                if (members == null || members.Count < 2)
+                {
+                    await ReplyAsync($"Need at least two registered users for '{normalized}' to start a vote.");
+                    return;
+                }
+
+                // Build display names list for the message
+                var displayNames = new List<string>();
+                foreach (var id in members)
+                {
+                    displayNames.Add(await GetUsernameForGuildAsync(id));
+                }
+
+                var builder = new StringBuilder();
+                builder.AppendLine($"Vote started for '{normalized}':");
+                for (int i = 0; i < displayNames.Count && i < 9; i++)
+                {
+                    builder.AppendLine($"{i+1}. {displayNames[i]}");
+                }
+
+                var msg = await ReplyAsync(builder.ToString());
+                int reactCount = Math.Min(members.Count, 9);
+                for (int i = 1; i <= reactCount; i++)
+                {
+                    await msg.AddReactionAsync(new Emoji(Gov.VoteManager.NumberEmojis[i]));
+                }
+
+                // Register vote with candidate IDs (not display names)
+                Gov.VoteManager.RegisterVote(msg.Id, normalized, members.Take(9).ToList());
                 return;
             }
 
-            // standard vote: !gov vote poll option...
-            var poll = parts[1];
-            var option = string.Join(' ', parts.Skip(2));
-            Store.CastVote(poll, option, Context.User.Id);
-            var currentCounts = Store.GetVoteCounts(poll);
-            var formatted = currentCounts.Select(kv => $"{kv.Key}: {kv.Value}");
-            await ReplyAsync($"Vote recorded for '{poll}' -> '{option}'. Current counts:\n" + string.Join("\n", formatted));
+            // non-R5 users can't initiate votes
+            await ReplyAsync("Voting is now handled via reactions; only R5 users can start a vote.");
         }
 
         // Simple CSV-backed store

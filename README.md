@@ -28,12 +28,22 @@ Discord bot, and I think I could make all the points specified in this message p
 	**Roles and Permissions**
 
 	- **SOS-S555-Access**: Required to use the `!gov` command group (subcommands: `register`, `unregister`, `list`, `raffle`, `vote`). If a user does not have this role, the bot will reject `!gov` requests.
+	- **R5**: Required to start a vote. Only R5 users can initiate `!gov vote` commands.
 	- **R4 / R5**: Administrative roles that are allowed to register or unregister *other* users. Example usages:
 		- `!gov register week21 @SomeUser` — registers the mentioned user (caller must have `R4` or `R5`).
 		- `!gov unregister week21 123456789012345678` — unregisters the user by id (caller must have `R4` or `R5`).
 	- **Send Messages** (Discord permission): Required to use generic commands like `!echo`; the bot enforces `RequireUserPermission(GuildPermission.SendMessages)` on several command modules.
+	- **Manage Messages** (Discord permission): Required for the voting system to remove invalid reactions when users change their votes. The bot removes old reactions automatically to keep the vote UI clean.
+
+	**Username Display**
+
+	All bot outputs consistently display usernames in `@username` format. The bot resolves user IDs through a three-tier system:
+	1. Current guild members (fastest)
+	2. Bot's global user cache
+	3. Discord API (ensures accuracy even for users not currently visible)
 
 	Note: Role checks are currently done by role name. If you prefer using role IDs (recommended for stability), I can update the code to check role IDs instead.
+
 
 For signing up / keeping track:
 a command to sign yourself up  (EX: !gov register  week 21)
@@ -44,4 +54,17 @@ some "admin" commands to override, but only should be used if the player themsel
 
 For selecting if multiple people have signed up (completely randomly):
 Select a random gov (EX: !gov raffle week 21)
-Or a voting system (EX: !gov vote week 21)
+
+Voting is now reaction‑based and automated. An administrator (role **R5**) starts a vote by providing a week; the bot automatically pulls registered candidates from the registrations file.
+
+```
+!gov vote week21
+```
+
+The bot will:
+1. List all users registered for that week, numbered 1–9 (up to 9 candidates).
+2. Add emoji reactions (1️⃣–9️⃣) to the message.
+3. Record reactions as votes automatically.
+
+Once started, further text commands against that message are ignored. Only R5 users can initiate a vote.
+

@@ -113,6 +113,8 @@ namespace SOSS555Bot
 
                 // Hook command handling after successful connect
                 _client.MessageReceived += HandleCommandAsync;
+                // watch for reactions to support voting
+                _client.ReactionAdded += HandleReactionAsync;
             }
             finally
             {
@@ -214,8 +216,29 @@ namespace SOSS555Bot
                 {
                     // Swallow logging errors to avoid affecting bot runtime
                 }
-
-                return;
+            }
+        }
+        private async Task HandleReactionAsync(Cacheable<IUserMessage, ulong> cached, Cacheable<IMessageChannel, ulong> channel, SocketReaction reaction)
+        {
+            // ignore bot's own reactions
+            if (reaction.UserId == _client.CurrentUser.Id) return;
+            try
+            {
+                // Get the actual message to allow reaction removal
+                var message = await cached.GetOrDownloadAsync();
+                if (message != null)
+                {
+                    // try delegate to Gov vote manager with async handling
+                    if (await SOSS555Bot.Commands.Gov.Gov.VoteManager.TryHandleReactionAsync(reaction, message))
+                    {
+                        // optionally log or ack
+                        Console.WriteLine($"[Vote] {reaction.UserId} reacted {reaction.Emote.Name} on message {reaction.MessageId}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Reaction] Error handling reaction: {ex.Message}");
             }
         }
 
