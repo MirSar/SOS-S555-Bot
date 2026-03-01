@@ -60,13 +60,52 @@ namespace SOSS555Bot.Commands.Bunker
         {
             try
             {
-                // Post the bunker registration message with reactions
+                // Check for help command
+                if (!string.IsNullOrWhiteSpace(message) && message.Equals("help", StringComparison.OrdinalIgnoreCase))
+                {
+                    await ShowHelp();
+                    return;
+                }
+
+                // Otherwise post the bunker registration message with reactions
                 await PostBunkerRegistrationMessage();
             }
             catch (Exception ex)
             {
                 await ReplyAsync($"Error: {ex.Message}");
             }
+        }
+
+        private async Task ShowHelp()
+        {
+            var builder = new StringBuilder();
+            builder.AppendLine("**Bunker Registration Help**");
+            builder.AppendLine("**Required Role:** `R4` or `R5` (admin only)");
+            builder.AppendLine();
+            builder.AppendLine("**Command:**");
+            builder.AppendLine("`!bunker` or `!bunk` - Post a bunker registration message");
+            builder.AppendLine();
+            builder.AppendLine("**How It Works:**");
+            builder.AppendLine("1. Use `!bunker` to post the registration board");
+            builder.AppendLine("2. React with emoji to register/unregister for bunkers");
+            builder.AppendLine("3. Each user can register for up to 3 bunkers");
+            builder.AppendLine("4. If you try to register for a 4th, your oldest registration is removed");
+            builder.AppendLine("5. Alliance tags come from your Discord role (3-letter role name)");
+            builder.AppendLine();
+            builder.AppendLine("**Available Bunkers:**");
+            builder.AppendLine("**Front:** F1 F2 F3 F4");
+            builder.AppendLine("**Back:** B1 B2 B3 B4 B5 B6 B7 B8 B9 B10 B11 B12");
+            builder.AppendLine();
+            builder.AppendLine("**Reaction Emojis:**");
+            builder.AppendLine("Front: 1️⃣ 2️⃣ 3️⃣ 4️⃣ (for F1-F4)");
+            builder.AppendLine("Back: 5️⃣ 6️⃣ 7️⃣ 8️⃣ 9️⃣ 🔟 🇦 🇧 🇨 🇩 🇪 🇫 (for B1-B12)");
+            builder.AppendLine();
+            builder.AppendLine("**Rules:**");
+            builder.AppendLine("- Only `R4` and `R5` roles can use this command");
+            builder.AppendLine("- Multiple users can register for the same bunker (competing alliances allowed)");
+            builder.AppendLine("- Max 3 registrations per user (oldest is removed if you register for a 4th)");
+            builder.AppendLine("- Alliance tag is determined by your 3-letter Discord role");
+            await ReplyAsync(builder.ToString());
         }
 
         private async Task PostBunkerRegistrationMessage()

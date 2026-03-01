@@ -171,8 +171,11 @@ namespace SOSS555Bot.Commands.Gov
                     case "vote":
                         await HandleVote(parts);
                         break;
+                    case "help":
+                        await HandleHelp(parts);
+                        break;
                     default:
-                        await ReplyAsync("Unknown subcommand. Usage: !gov <register|unregister|list|raffle|vote> [args]");
+                        await ReplyAsync("Unknown subcommand. Usage: !gov <register|unregister|list|raffle|vote|help> [args]");
                         break;
                 }
             }
@@ -466,6 +469,119 @@ namespace SOSS555Bot.Commands.Gov
 
             // non-R5 users can't initiate votes
             await ReplyAsync("Voting is now handled via reactions; only R5 users can start a vote.");
+        }
+
+        private async Task HandleHelp(string[] parts)
+        {
+            if (parts.Length == 1)
+            {
+                // General help - overview of all commands
+                var builder = new StringBuilder();
+                builder.AppendLine("**Government Commands Help**");
+                builder.AppendLine("Required Role: `SOS-S555-Access`");
+                builder.AppendLine();
+                builder.AppendLine("**Available Subcommands:**");
+                builder.AppendLine("`register` - Register yourself or another user for a week");
+                builder.AppendLine("`unregister` - Unregister yourself or another user from a week");
+                builder.AppendLine("`list` - View all registrations for a week");
+                builder.AppendLine("`raffle` - Hold a raffle for a week's registrations");
+                builder.AppendLine("`vote` - Start or view a reaction-based vote (R5 only)");
+                builder.AppendLine();
+                builder.AppendLine("Use `!gov help <subcommand>` for detailed information about a specific command.");
+                await ReplyAsync(builder.ToString());
+                return;
+            }
+
+            var helpCmd = parts[1].ToLowerInvariant();
+            var helpBuilder = new StringBuilder();
+
+            switch (helpCmd)
+            {
+                case "register":
+                    helpBuilder.AppendLine("**!gov register - Register for a Week**");
+                    helpBuilder.AppendLine("**Required Role:** `SOS-S555-Access`");
+                    helpBuilder.AppendLine("**Admin Role Required:** `R4` or `R5` (to register other users)");
+                    helpBuilder.AppendLine();
+                    helpBuilder.AppendLine("**Usage:**");
+                    helpBuilder.AppendLine("`!gov register <week#>` - Register yourself");
+                    helpBuilder.AppendLine("`!gov register <week#> @user` - Register another user (admin only)");
+                    helpBuilder.AppendLine();
+                    helpBuilder.AppendLine("**Examples:**");
+                    helpBuilder.AppendLine("`!gov register week21` - Register for week 21");
+                    helpBuilder.AppendLine("`!gov register 21` - Alternative format (uses week 21)");
+                    helpBuilder.AppendLine("`!gov register week5 @Alice` - Register Alice for week 5 (R4/R5 only)");
+                    helpBuilder.AppendLine();
+                    helpBuilder.AppendLine("**Notes:**");
+                    helpBuilder.AppendLine("- Week numbers must be between 1 and 53");
+                    break;
+
+                case "unregister":
+                    helpBuilder.AppendLine("**!gov unregister - Unregister from a Week**");
+                    helpBuilder.AppendLine("**Required Role:** `SOS-S555-Access`");
+                    helpBuilder.AppendLine("**Admin Role Required:** `R4` or `R5` (to unregister other users)");
+                    helpBuilder.AppendLine();
+                    helpBuilder.AppendLine("**Usage:**");
+                    helpBuilder.AppendLine("`!gov unregister <week#>` - Unregister yourself");
+                    helpBuilder.AppendLine("`!gov unregister <week#> @user` - Unregister another user (admin only)");
+                    helpBuilder.AppendLine();
+                    helpBuilder.AppendLine("**Examples:**");
+                    helpBuilder.AppendLine("`!gov unregister week21` - Remove yourself from week 21");
+                    helpBuilder.AppendLine("`!gov unregister 21 @Bob` - Remove Bob from week 21 (R4/R5 only)");
+                    break;
+
+                case "list":
+                    helpBuilder.AppendLine("**!gov list - View Registrations**");
+                    helpBuilder.AppendLine("**Required Role:** `SOS-S555-Access`");
+                    helpBuilder.AppendLine();
+                    helpBuilder.AppendLine("**Usage:**");
+                    helpBuilder.AppendLine("`!gov list <week#>` - Show all registrations for a week");
+                    helpBuilder.AppendLine();
+                    helpBuilder.AppendLine("**Examples:**");
+                    helpBuilder.AppendLine("`!gov list week21` - List all users registered for week 21");
+                    helpBuilder.AppendLine("`!gov list 21` - Alternative format");
+                    break;
+
+                case "raffle":
+                    helpBuilder.AppendLine("**!gov raffle - Hold a Raffle**");
+                    helpBuilder.AppendLine("**Required Role:** `R4` or `R5` (admin only)");
+                    helpBuilder.AppendLine();
+                    helpBuilder.AppendLine("**Usage:**");
+                    helpBuilder.AppendLine("`!gov raffle <week#>` - Pick a random winner from registered users");
+                    helpBuilder.AppendLine();
+                    helpBuilder.AppendLine("**Examples:**");
+                    helpBuilder.AppendLine("`!gov raffle week21` - Randomly select a winner from week 21 registrations");
+                    helpBuilder.AppendLine();
+                    helpBuilder.AppendLine("**Notes:**");
+                    helpBuilder.AppendLine("- Must have at least 2 registered users");
+                    helpBuilder.AppendLine("- Selects one random user from all registrations");
+                    break;
+
+                case "vote":
+                    helpBuilder.AppendLine("**!gov vote - Reaction-Based Voting**");
+                    helpBuilder.AppendLine("**Required Role:** `R5` (admin only) to start votes");
+                    helpBuilder.AppendLine();
+                    helpBuilder.AppendLine("**Usage:**");
+                    helpBuilder.AppendLine("`!gov vote <week#>` - Start a reaction-based vote for a week's registrations");
+                    helpBuilder.AppendLine();
+                    helpBuilder.AppendLine("**Examples:**");
+                    helpBuilder.AppendLine("`!gov vote week21` - Start vote for week 21 candidates");
+                    helpBuilder.AppendLine();
+                    helpBuilder.AppendLine("**How Voting Works:**");
+                    helpBuilder.AppendLine("1. R5 user starts a vote with `!gov vote <week#>`");
+                    helpBuilder.AppendLine("2. Bot posts a message listing registered users (max 9)");
+                    helpBuilder.AppendLine("3. React with number emojis (1️⃣, 2️⃣, 3️⃣, etc.) to vote");
+                    helpBuilder.AppendLine("4. Each user can vote for only one candidate (reacting again changes vote)");
+                    helpBuilder.AppendLine();
+                    helpBuilder.AppendLine("**Emojis:** 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣ 8️⃣ 9️⃣");
+                    break;
+
+                default:
+                    helpBuilder.AppendLine($"Unknown subcommand: `{helpCmd}`");
+                    helpBuilder.AppendLine("Available commands: `register`, `unregister`, `list`, `raffle`, `vote`");
+                    break;
+            }
+
+            await ReplyAsync(helpBuilder.ToString());
         }
 
         // Simple CSV-backed store
