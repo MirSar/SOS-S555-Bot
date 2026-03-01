@@ -9,6 +9,8 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
+#nullable enable
+
 namespace SOSS555Bot.Commands.Bunker
 {
     /// <summary>
@@ -56,7 +58,7 @@ namespace SOSS555Bot.Commands.Bunker
         [Alias("bunk")]
         [RequireContext(ContextType.Guild)]
         [RequireUserPermission(GuildPermission.SendMessages)]
-        public async Task ExecuteAsync([Remainder][Summary("A message or subcommand")] string message = null)
+        public async Task ExecuteAsync([Remainder][Summary("A message or subcommand")] string? message = null)
         {
             try
             {
@@ -117,10 +119,11 @@ namespace SOSS555Bot.Commands.Bunker
             var bunkerEmojis = BunkerManager.BunkerEmojis;
             var bunkerList = BunkerManager.BunkerList;
 
+            var registrations = Store.GetAllRegistrations(Context.Guild.Id);
+            
             builder.AppendLine("**Front:**");
             for (int i = 0; i < 4; i++)
             {
-                var registrations = Store.GetAllRegistrations();
                 var alliances = registrations.ContainsKey(bunkerList[i])
                     ? string.Join(", ", registrations[bunkerList[i]])
                     : "(empty)";
@@ -131,7 +134,6 @@ namespace SOSS555Bot.Commands.Bunker
             builder.AppendLine("**Back:**");
             for (int i = 4; i < bunkerList.Length; i++)
             {
-                var registrations = Store.GetAllRegistrations();
                 var alliances = registrations.ContainsKey(bunkerList[i])
                     ? string.Join(", ", registrations[bunkerList[i]])
                     : "(empty)";
@@ -172,21 +174,21 @@ namespace SOSS555Bot.Commands.Bunker
                 _registrationMessages[messageId] = message;
             }
 
-            public static Task<(bool Success, string BunkerRemoved)> TryHandleReactionAsync(SocketReaction reaction, IUserMessage message, string allianceTag)
+            public static Task<(bool Success, string? BunkerRemoved)> TryHandleReactionAsync(SocketReaction reaction, IUserMessage message, string allianceTag)
             {
                 if (!_registrationMessages.ContainsKey(reaction.MessageId))
-                    return Task.FromResult((false, (string)null));
+                    return Task.FromResult<(bool, string?)>((false, null));
 
                 // map to guild id from the message's channel
                 var guild = (message.Channel as SocketGuildChannel)?.Guild;
-                if (guild == null) return Task.FromResult((false, (string)null));
+                if (guild == null) return Task.FromResult<(bool, string?)>((false, null));
                 var guildId = guild.Id;
 
                 // Map emoji to bunker index
                 var emoji = reaction.Emote.Name;
                 int bunkerIndex = Array.IndexOf(BunkerEmojis, emoji);
                 if (bunkerIndex < 0)
-                    return Task.FromResult((false, (string)null));
+                    return Task.FromResult<(bool, string?)>((false, null));
 
                 var bunker = BunkerList[bunkerIndex];
                 var userId = reaction.UserId;
@@ -195,7 +197,7 @@ namespace SOSS555Bot.Commands.Bunker
                 if (Store.IsUserRegisteredForBunker(guildId, userId, bunker))
                 {
                     Store.Unregister(guildId, bunker, userId);
-                    return Task.FromResult((true, (string)null)); // Successfully unregistered
+                    return Task.FromResult<(bool, string?)>((true, null)); // Successfully unregistered
                 }
                 else
                 {
@@ -205,11 +207,11 @@ namespace SOSS555Bot.Commands.Bunker
                         var removed = Store.RemoveOldestRegistrationForUser(guildId, userId);
                         // After removal, proceed to register the new bunker
                         Store.Register(guildId, bunker, userId, allianceTag);
-                        return Task.FromResult((true, removed));
+                        return Task.FromResult<(bool, string?)>((true, removed));
                     }
 
                     Store.Register(guildId, bunker, userId, allianceTag);
-                    return Task.FromResult((true, (string)null)); // Successfully registered
+                    return Task.FromResult<(bool, string?)>((true, null)); // Successfully registered
                 }
             }
 
@@ -300,7 +302,7 @@ namespace SOSS555Bot.Commands.Bunker
                     {
                         using (var reader = new StreamReader(RegistrationsFile, Encoding.UTF8))
                         {
-                            string line;
+                            string? line;
                             while ((line = reader.ReadLine()) != null)
                             {
                                 if (string.IsNullOrWhiteSpace(line))
@@ -388,12 +390,12 @@ namespace SOSS555Bot.Commands.Bunker
             /// Removes the oldest registration (by timestamp) for the given user across all bunkers.
             /// Returns the bunker name that was removed, or null if none removed.
             /// </summary>
-            public string RemoveOldestRegistrationForUser(ulong guildId, ulong userId)
+            public string? RemoveOldestRegistrationForUser(ulong guildId, ulong userId)
             {
                 lock (Sync)
                 {
-                    string foundKey = null;
-                    string foundBunker = null;
+                    string? foundKey = null;
+                    string? foundBunker = null;
                     long oldestTs = long.MaxValue;
                     var prefix = $"{guildId}:";
                     foreach (var kvp in Registrations.Where(k => k.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
