@@ -177,6 +177,11 @@ namespace SOSS555Bot.Commands.Bunker
                 if (!_registrationMessages.ContainsKey(reaction.MessageId))
                     return Task.FromResult((false, (string)null));
 
+                // map to guild id from the message's channel
+                var guild = (message.Channel as SocketGuildChannel)?.Guild;
+                if (guild == null) return Task.FromResult((false, (string)null));
+                var guildId = guild.Id;
+
                 // Map emoji to bunker index
                 var emoji = reaction.Emote.Name;
                 int bunkerIndex = Array.IndexOf(BunkerEmojis, emoji);
@@ -187,23 +192,23 @@ namespace SOSS555Bot.Commands.Bunker
                 var userId = reaction.UserId;
 
                 // Toggle registration: if already registered, unregister; otherwise register
-                if (Store.IsUserRegisteredForBunker(userId, bunker))
+                if (Store.IsUserRegisteredForBunker(guildId, userId, bunker))
                 {
-                    Store.Unregister(bunker, userId);
+                    Store.Unregister(guildId, bunker, userId);
                     return Task.FromResult((true, (string)null)); // Successfully unregistered
                 }
                 else
                 {
                     // If user at limit, remove oldest registration first and return which one was removed
-                    if (Store.GetUserRegistrationCount(userId) >= MaxRegistrationsPerUser)
+                    if (Store.GetUserRegistrationCount(guildId, userId) >= MaxRegistrationsPerUser)
                     {
-                        var removed = Store.RemoveOldestRegistrationForUser(userId);
+                        var removed = Store.RemoveOldestRegistrationForUser(guildId, userId);
                         // After removal, proceed to register the new bunker
-                        Store.Register(bunker, userId, allianceTag);
+                        Store.Register(guildId, bunker, userId, allianceTag);
                         return Task.FromResult((true, removed));
                     }
 
-                    Store.Register(bunker, userId, allianceTag);
+                    Store.Register(guildId, bunker, userId, allianceTag);
                     return Task.FromResult((true, (string)null)); // Successfully registered
                 }
             }
@@ -214,8 +219,9 @@ namespace SOSS555Bot.Commands.Bunker
             {
                 if (!_registrationMessages.TryGetValue(messageId, out var message))
                     return;
-
-                var content = BuildRegistrationContent();
+                var guild = (message.Channel as SocketGuildChannel)?.Guild;
+                if (guild == null) return;
+                var content = BuildRegistrationContent(guild.Id);
                 try
                 {
                     await message.ModifyAsync(m => m.Content = content);
@@ -226,13 +232,13 @@ namespace SOSS555Bot.Commands.Bunker
                 }
             }
 
-            private static string BuildRegistrationContent()
+            private static string BuildRegistrationContent(ulong guildId)
             {
                 var builder = new StringBuilder();
                 builder.AppendLine("**Bunker Registration** - React to register/unregister for bunkers (max 3 per user)");
                 builder.AppendLine();
                 
-                var registrations = Store.GetAllRegistrations();
+                var registrations = Store.GetAllRegistrations(guildId);
 
                 builder.AppendLine("**Front:**");
                 for (int i = 0; i < 4; i++)
@@ -265,7 +271,7 @@ namespace SOSS555Bot.Commands.Bunker
             private static readonly object Sync = new object();
             private const string Delim = "|";
 
-            // In-memory cache: bunker -> List<(userId, allianceTag, timestampMs)>
+            // In-memory cache: key = "{guildId}:{bunker}" -> List<(userId, allianceTag, timestampMs)>
             private Dictionary<string, List<(ulong userId, string allianceTag, long ts)>> Registrations
                 = new Dictionary<string, List<(ulong, string, long)>>(StringComparer.OrdinalIgnoreCase);
 
@@ -301,22 +307,26 @@ namespace SOSS555Bot.Commands.Bunker
                                     continue;
 
                                 var parts = line.Split(Delim);
-                                if (parts.Length < 3)
+                                if (parts.Length < 4)
                                     continue;
 
-                                var bunker = parts[0].Trim();
-                                if (!ulong.TryParse(parts[1].Trim(), out var userId))
+                                // expected format: guildId|bunker|userId|allianceTag|ts
+                                if (!ulong.TryParse(parts[0].Trim(), out var guildId))
+                                    continue;
+                                var bunker = parts[1].Trim();
+                                if (!ulong.TryParse(parts[2].Trim(), out var userId))
                                     continue;
 
-                                var allianceTag = parts[2].Trim();
+                                var allianceTag = parts[3].Trim();
                                 long ts = 0;
-                                if (parts.Length >= 4 && long.TryParse(parts[3].Trim(), out var parsedTs))
+                                if (parts.Length >= 5 && long.TryParse(parts[4].Trim(), out var parsedTs))
                                     ts = parsedTs;
 
-                                if (!Registrations.ContainsKey(bunker))
-                                    Registrations[bunker] = new List<(ulong, string, long)>();
+                                var key = $"{guildId}:{bunker}";
+                                if (!Registrations.ContainsKey(key))
+                                    Registrations[key] = new List<(ulong, string, long)>();
 
-                                Registrations[bunker].Add((userId, allianceTag, ts));
+                                Registrations[key].Add((userId, allianceTag, ts));
                             }
                         }
                     }
@@ -338,11 +348,15 @@ namespace SOSS555Bot.Commands.Bunker
                         {
                             foreach (var kvp in Registrations)
                             {
-                                var bunker = kvp.Key;
-                                    foreach (var (userId, allianceTag, ts) in kvp.Value)
-                                    {
-                                        writer.WriteLine($"{bunker}{Delim}{userId}{Delim}{allianceTag}{Delim}{ts}");
-                                    }
+                                var key = kvp.Key; // format: guildId:bunker
+                                var idx = key.IndexOf(':');
+                                if (idx <= 0) continue;
+                                var guildStr = key.Substring(0, idx);
+                                var bunker = key.Substring(idx + 1);
+                                foreach (var (userId, allianceTag, ts) in kvp.Value)
+                                {
+                                    writer.WriteLine($"{guildStr}{Delim}{bunker}{Delim}{userId}{Delim}{allianceTag}{Delim}{ts}");
+                                }
                             }
                         }
                     }
@@ -353,18 +367,19 @@ namespace SOSS555Bot.Commands.Bunker
                 }
             }
 
-            public void Register(string bunker, ulong userId, string allianceTag)
+            public void Register(ulong guildId, string bunker, ulong userId, string allianceTag)
             {
                 lock (Sync)
                 {
-                    if (!Registrations.ContainsKey(bunker))
-                        Registrations[bunker] = new List<(ulong, string, long)>();
+                    var key = $"{guildId}:{bunker}";
+                    if (!Registrations.ContainsKey(key))
+                        Registrations[key] = new List<(ulong, string, long)>();
 
                     // Only add if not already registered for this bunker.
-                    if (Registrations[bunker].Any(x => x.userId == userId))
+                    if (Registrations[key].Any(x => x.userId == userId))
                         return;
 
-                    Registrations[bunker].Add((userId, allianceTag, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+                    Registrations[key].Add((userId, allianceTag, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
                     Persist();
                 }
             }
@@ -373,27 +388,31 @@ namespace SOSS555Bot.Commands.Bunker
             /// Removes the oldest registration (by timestamp) for the given user across all bunkers.
             /// Returns the bunker name that was removed, or null if none removed.
             /// </summary>
-            public string RemoveOldestRegistrationForUser(ulong userId)
+            public string RemoveOldestRegistrationForUser(ulong guildId, ulong userId)
             {
                 lock (Sync)
                 {
+                    string foundKey = null;
                     string foundBunker = null;
                     long oldestTs = long.MaxValue;
-                    foreach (var kvp in Registrations)
+                    var prefix = $"{guildId}:";
+                    foreach (var kvp in Registrations.Where(k => k.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
                     {
                         foreach (var entry in kvp.Value.Where(x => x.userId == userId))
                         {
                             if (entry.ts < oldestTs)
                             {
                                 oldestTs = entry.ts;
-                                foundBunker = kvp.Key;
+                                foundKey = kvp.Key;
+                                var idx = kvp.Key.IndexOf(':');
+                                foundBunker = idx >= 0 ? kvp.Key.Substring(idx + 1) : kvp.Key;
                             }
                         }
                     }
 
-                    if (foundBunker != null)
+                    if (foundKey != null)
                     {
-                        Registrations[foundBunker].RemoveAll(x => x.userId == userId);
+                        Registrations[foundKey].RemoveAll(x => x.userId == userId);
                         Persist();
                     }
 
@@ -401,14 +420,15 @@ namespace SOSS555Bot.Commands.Bunker
                 }
             }
 
-            public bool Unregister(string bunker, ulong userId)
+            public bool Unregister(ulong guildId, string bunker, ulong userId)
             {
                 lock (Sync)
                 {
-                    if (!Registrations.ContainsKey(bunker))
+                    var key = $"{guildId}:{bunker}";
+                    if (!Registrations.ContainsKey(key))
                         return false;
 
-                    var removed = Registrations[bunker].RemoveAll(x => x.userId == userId) > 0;
+                    var removed = Registrations[key].RemoveAll(x => x.userId == userId) > 0;
                     if (removed)
                         Persist();
 
@@ -416,36 +436,41 @@ namespace SOSS555Bot.Commands.Bunker
                 }
             }
 
-            public int GetUserRegistrationCount(ulong userId)
+            public int GetUserRegistrationCount(ulong guildId, ulong userId)
             {
                 lock (Sync)
                 {
-                    return Registrations.Values.Sum(list => list.Count(x => x.userId == userId));
+                    var prefix = $"{guildId}:";
+                    return Registrations.Where(kv => kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        .Sum(kv => kv.Value.Count(x => x.userId == userId));
                 }
             }
 
-            public bool IsUserRegisteredForBunker(ulong userId, string bunker)
+            public bool IsUserRegisteredForBunker(ulong guildId, ulong userId, string bunker)
             {
                 lock (Sync)
                 {
-                    return Registrations.ContainsKey(bunker) 
-                        && Registrations[bunker].Any(x => x.userId == userId);
+                    var key = $"{guildId}:{bunker}";
+                    return Registrations.ContainsKey(key)
+                        && Registrations[key].Any(x => x.userId == userId);
                 }
             }
 
-            public Dictionary<string, List<string>> GetAllRegistrations()
+            public Dictionary<string, List<string>> GetAllRegistrations(ulong guildId)
             {
                 lock (Sync)
                 {
                     var result = new Dictionary<string, List<string>>();
-                    foreach (var kvp in Registrations)
+                    var prefix = $"{guildId}:";
+                    foreach (var kvp in Registrations.Where(k => k.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
                     {
+                        var bunker = kvp.Key.Substring(prefix.Length);
                         var alliances = kvp.Value
                             .Select(x => x.allianceTag)
                             .Distinct()
                             .OrderBy(x => x)
                             .ToList();
-                        result[kvp.Key] = alliances;
+                        result[bunker] = alliances;
                     }
                     return result;
                 }

@@ -235,7 +235,7 @@ namespace SOSS555Bot.Commands.Gov
                 targetName = await GetUsernameForGuildAsync(targetUserId);
             }
 
-            Store.Register(normalized, targetUserId);
+            Store.Register(Context.Guild.Id, normalized, targetUserId);
             if (targetUserId == Context.User.Id)
                 await ReplyAsync($"{Context.User.Username} registered for '{normalized}'.");
             else
@@ -280,7 +280,7 @@ namespace SOSS555Bot.Commands.Gov
                 targetName = await GetUsernameForGuildAsync(targetUserId);
             }
 
-            var removed = Store.Unregister(normalized, targetUserId);
+            var removed = Store.Unregister(Context.Guild.Id, normalized, targetUserId);
             if (removed)
             {
                 if (targetUserId == Context.User.Id)
@@ -302,7 +302,7 @@ namespace SOSS555Bot.Commands.Gov
             // list all groups with usernames
             if (parts.Length == 1)
             {
-                var keys = Store.GetAllRegistrationGroups();
+                var keys = Store.GetAllRegistrationGroups(Context.Guild.Id);
                 if (!keys.Any())
                 {
                     await ReplyAsync("No registration groups found.");
@@ -312,7 +312,7 @@ namespace SOSS555Bot.Commands.Gov
                 var lines = new List<string>();
                 foreach (var key in keys)
                 {
-                    var members = Store.GetRegistrations(key);
+                    var members = Store.GetRegistrations(Context.Guild.Id, key);
                     var names = new List<string>();
                     foreach (var id in members)
                     {
@@ -332,7 +332,7 @@ namespace SOSS555Bot.Commands.Gov
                     return;
                 }
 
-                var members = Store.GetRegistrations(normalized);
+                var members = Store.GetRegistrations(Context.Guild.Id, normalized);
                 if (members == null || members.Count == 0)
                 {
                     await ReplyAsync($"No members registered in '{normalized}'.");
@@ -392,7 +392,7 @@ namespace SOSS555Bot.Commands.Gov
             if (parts.Length >= 3 && !int.TryParse(parts[2], out winnersCount))
                 winnersCount = 1;
 
-            var members = Store.GetRegistrations(group);
+            var members = Store.GetRegistrations(Context.Guild.Id, group);
             if (members == null || members.Count == 0)
             {
                 await ReplyAsync($"No members to raffle in '{group}'.");
@@ -434,7 +434,7 @@ namespace SOSS555Bot.Commands.Gov
                 }
 
                 // load current registrations for the week
-                var members = Store.GetRegistrations(normalized);
+                var members = Store.GetRegistrations(Context.Guild.Id, normalized);
                 if (members == null || members.Count < 2)
                 {
                     await ReplyAsync($"Need at least two registered users for '{normalized}' to start a vote.");
@@ -463,7 +463,7 @@ namespace SOSS555Bot.Commands.Gov
                 }
 
                 // Register vote with candidate IDs (not display names)
-                Gov.VoteManager.RegisterVote(msg.Id, normalized, members.Take(9).ToList());
+                Gov.VoteManager.RegisterVote(msg.Id, $"{Context.Guild.Id}:{normalized}", members.Take(9).ToList());
                 return;
             }
 
@@ -708,46 +708,54 @@ namespace SOSS555Bot.Commands.Gov
                 }
             }
 
-            public void Register(string group, ulong userId)
+            public void Register(ulong guildId, string group, ulong userId)
             {
                 lock (Sync)
                 {
-                    if (!Registrations.TryGetValue(group, out var set))
+                    var key = $"{guildId}:{group}";
+                    if (!Registrations.TryGetValue(key, out var set))
                     {
                         set = new HashSet<ulong>();
-                        Registrations[group] = set;
+                        Registrations[key] = set;
                     }
                     set.Add(userId);
                     Persist();
                 }
             }
 
-            public bool Unregister(string group, ulong userId)
+            public bool Unregister(ulong guildId, string group, ulong userId)
             {
                 lock (Sync)
                 {
-                    if (!Registrations.TryGetValue(group, out var set)) return false;
+                    var key = $"{guildId}:{group}";
+                    if (!Registrations.TryGetValue(key, out var set)) return false;
                     var removed = set.Remove(userId);
-                    if (set.Count == 0) Registrations.Remove(group);
+                    if (set.Count == 0) Registrations.Remove(key);
                     Persist();
                     return removed;
                 }
             }
 
-            public List<ulong> GetRegistrations(string group)
+            public List<ulong> GetRegistrations(ulong guildId, string group)
             {
                 lock (Sync)
                 {
-                    if (!Registrations.TryGetValue(group, out var set)) return new List<ulong>();
+                    var key = $"{guildId}:{group}";
+                    if (!Registrations.TryGetValue(key, out var set)) return new List<ulong>();
                     return set.ToList();
                 }
             }
 
-            public IEnumerable<string> GetAllRegistrationGroups()
+            public IEnumerable<string> GetAllRegistrationGroups(ulong guildId)
             {
                 lock (Sync)
                 {
-                    return Registrations.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
+                    var prefix = $"{guildId}:";
+                    return Registrations.Keys
+                        .Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        .Select(k => k.Substring(prefix.Length))
+                        .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
                 }
             }
 
