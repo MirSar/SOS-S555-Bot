@@ -6,6 +6,10 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
+#nullable enable
+
+ 
+
 namespace SOSS555Bot
 {
     internal class Program
@@ -28,7 +32,7 @@ namespace SOSS555Bot
                                 @"D:\Data\Dropbox\Software\GIT\SOS-S555-Bot\Discord-token.txt";
 
             // If there's a JSON config in the same folder as the token file, load it too (overrides appsettings)
-            string externalConfigPath = null;
+            string? externalConfigPath = null;
             try
             {
                 var tokenDir = Path.GetDirectoryName(tokenFilePath) ?? @"D:\Data\Dropbox\Software\GIT\SOS-S555-Bot";
@@ -37,14 +41,13 @@ namespace SOSS555Bot
             }
             catch { }
 
-            string tokenFromFile = null;
+            string? tokenFromFile = null;
             try
             {
                 if (File.Exists(tokenFilePath))
                 {
-                    tokenFromFile = File.ReadAllText(tokenFilePath).Trim();
-                    if (string.IsNullOrWhiteSpace(tokenFromFile))
-                        tokenFromFile = null;
+                    var read = File.ReadAllText(tokenFilePath).Trim();
+                    tokenFromFile = string.IsNullOrWhiteSpace(read) ? null : read;
                 }
                 else
                 {
@@ -66,7 +69,7 @@ namespace SOSS555Bot
 
             if (!string.IsNullOrWhiteSpace(tokenFromFile))
             {
-                var dict = new Dictionary<string, string> { { "DiscordToken", tokenFromFile } };
+                var dict = new Dictionary<string, string?> { { "DiscordToken", tokenFromFile } };
                 builder.AddInMemoryCollection(dict);
             }
 
@@ -118,20 +121,20 @@ namespace SOSS555Bot
                 else
                     Console.WriteLine("No interactive console detected; waiting for process exit to shut down.");
 
-                var exitTcs = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var exitTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
                 if (hasConsole)
                 {
                     Console.CancelKeyPress += (sender, eventArgs) =>
                     {
                         eventArgs.Cancel = true;
-                        exitTcs.TrySetResult(null);
+                        exitTcs.TrySetResult(true);
                     };
                 }
 
                 AppDomain.CurrentDomain.ProcessExit += (sender, eventArgs) =>
                 {
-                    exitTcs.TrySetResult(null);
+                    exitTcs.TrySetResult(true);
                 };
 
                 await exitTcs.Task;
