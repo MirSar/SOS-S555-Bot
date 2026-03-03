@@ -113,8 +113,9 @@ namespace SOSS555Bot
 
                 // Hook command handling after successful connect
                 _client.MessageReceived += HandleCommandAsync;
-                // watch for reactions to support voting
+                // watch for reactions to support voting and bunker registration
                 _client.ReactionAdded += HandleReactionAsync;
+                _client.ReactionRemoved += HandleReactionRemovedAsync;
             }
             finally
             {
@@ -291,6 +292,35 @@ namespace SOSS555Bot
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[Reaction] Error handling reaction: {ex.Message}");
+            }
+        }
+
+        private async Task HandleReactionRemovedAsync(Cacheable<IUserMessage, ulong> cached, Cacheable<IMessageChannel, ulong> channel, SocketReaction reaction)
+        {
+            // ignore bot's own reactions
+            if (reaction.UserId == _client.CurrentUser.Id) return;
+            try
+            {
+                var message = await cached.GetOrDownloadAsync();
+                if (message == null) return;
+
+                // Only handle bot-posted messages in guild channels
+                var guild = (message.Channel as SocketGuildChannel)?.Guild;
+                if (guild == null || !message.Author.IsBot) return;
+
+                // Try bunker registration removal first
+                var bunkerRemoved = await SOSS555Bot.Commands.Bunker.BunkerCommand.BunkerManager.TryHandleReactionRemovedAsync(reaction, message);
+                if (bunkerRemoved)
+                {
+                    Console.WriteLine($"[Bunker] {reaction.UserId} unregistered via removal of {reaction.Emote.Name} on message {reaction.MessageId}");
+                    await SOSS555Bot.Commands.Bunker.BunkerCommand.BunkerManager.UpdateMessageDisplayAsync(reaction.MessageId);
+                }
+
+                // (If you have gov/vote removal handling, add it here similarly.)
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ReactionRemoved] Error handling reaction removal: {ex.Message}");
             }
         }
 

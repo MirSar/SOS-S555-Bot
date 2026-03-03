@@ -1,4 +1,4 @@
-    using Discord;
+using Discord;
 using Discord.Commands;
 using Discord.WebSocket;
 using System;
@@ -311,7 +311,31 @@ namespace SOSS555Bot.Commands.Bunker
                 }
             }
 
+            public static Task<bool> TryHandleReactionRemovedAsync(SocketReaction reaction, IUserMessage message)
+            {
+                if (!_registrationMessages.TryGetValue(reaction.MessageId, out var entry))
+                    return Task.FromResult(false);
 
+                var weekKey = entry.week;
+
+                // map to guild id from the message's channel
+                var guild = (message.Channel as SocketGuildChannel)?.Guild;
+                if (guild == null) return Task.FromResult(false);
+                var guildId = guild.Id;
+
+                // Map emoji to bunker index
+                var emoji = reaction.Emote.Name;
+                int bunkerIndex = Array.IndexOf(BunkerEmojis, emoji);
+                if (bunkerIndex < 0)
+                    return Task.FromResult(false);
+
+                var bunker = BunkerList[bunkerIndex];
+                var userId = reaction.UserId;
+
+                // Unregister the user for this bunker (idempotent)
+                var removed = Store.Unregister(guildId, weekKey, bunker, userId);
+                return Task.FromResult(removed);
+            }
 
             public static async Task UpdateMessageDisplayAsync(ulong messageId)
             {
