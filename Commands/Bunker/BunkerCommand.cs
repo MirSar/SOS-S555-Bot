@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Globalization;
 
 #nullable enable
 
@@ -16,15 +17,16 @@ namespace SOSS555Bot.Commands.Bunker
     /// <summary>
     /// Commands for bunker registration and tracking.
     /// Usage examples:
-    ///  - !bunker register F1
-    ///  - !bunker unregister F1
-    ///  - !bunker list
+    ///  - !bunker post           -> post current week's registration board (admin)
+    ///  - !bunker post 2026-W09  -> post specific week (admin)
+    ///  - !bunker weeks          -> list weeks that have registrations
+    ///  - React on a posted board to register/unregister for that week's bunkers
     /// </summary>
     public class BunkerCommand : ModuleBase<SocketCommandContext>
     {
         private static readonly BunkerStore Store = BunkerStore.Load();
-        
-        private static readonly string[] ValidBunkers = 
+
+        private static readonly string[] ValidBunkers =
         {
             "F1", "F2", "F3", "F4", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", "B11", "B12"
         };
@@ -53,6 +55,54 @@ namespace SOSS555Bot.Commands.Bunker
             return "UNKNOWN";
         }
 
+        private static string WeekKeyFromDate(DateTimeOffset dt)
+        {
+            // ISO-like week: first-four-day-week with Monday as first day
+            var cal = CultureInfo.InvariantCulture.Calendar;
+            var week = cal.GetWeekOfYear(dt.UtcDateTime, CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
+            var year = dt.UtcDateTime.Year;
+
+            // Handle week 52/53 edge-cases around year boundary using ISO rule:
+            // If week number is 1 but month is December, increment year.
+            if (week == 1 && dt.Month == 12)
+                year += 1;
+            // If week belongs to previous year (e.g., Jan with week 52/53)
+            if (week >= 52 && dt.Month == 1)
+                year -= 1;
+
+            return $"{year}-W{week:D2}";
+        }
+
+        private static bool TryParseWeekKey(string input, out string weekKey)
+        {
+            weekKey = string.Empty;
+            if (string.IsNullOrWhiteSpace(input))
+                return false;
+
+            input = input.Trim();
+
+            // Accept explicit week format: 2026-W09
+            if (System.Text.RegularExpressions.Regex.IsMatch(input, @"^\d{4}-W\d{1,2}$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            {
+                // Normalize to two-digit week
+                var parts = input.Split("-W", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (parts.Length == 2 && int.TryParse(parts[1], out var w))
+                {
+                    weekKey = $"{parts[0]}-W{w:D2}";
+                    return true;
+                }
+            }
+
+            // Accept ISO date / any date parseable
+            if (DateTimeOffset.TryParse(input, out var dt))
+            {
+                weekKey = WeekKeyFromDate(dt);
+                return true;
+            }
+
+            return false;
+        }
+
         [Summary("Bunker command group")]
         [Command("bunker")]
         [Alias("bunk")]
@@ -62,15 +112,51 @@ namespace SOSS555Bot.Commands.Bunker
         {
             try
             {
-                // Check for help command
-                if (!string.IsNullOrWhiteSpace(message) && message.Equals("help", StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrWhiteSpace(message))
                 {
-                    await ShowHelp();
+                    var tokens = message.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    var verb = tokens.Length > 0 ? tokens[0].ToLowerInvariant() : string.Empty;
+
+                    if (verb == "help")
+                    {
+                        await ShowHelp();
+                        return;
+                    }
+
+                    if (verb == "weeks" || verb == "listweeks")
+                    {
+                        await ShowWeeks();
+                        return;
+                    }
+
+                    if (verb == "post")
+                    {
+                        if (!CallerHasAdminRole())
+                        {
+                            await ReplyAsync("Only users with R4/R5 roles can post bunker boards.");
+                            return;
+                        }
+
+                        string weekKey;
+                        if (tokens.Length >= 2 && TryParseWeekKey(tokens[1], out var parsed))
+                            weekKey = parsed;
+                        else
+                            weekKey = WeekKeyFromDate(DateTimeOffset.UtcNow);
+
+                        await PostBunkerRegistrationMessage(weekKey);
+                        return;
+                    }
+                }
+
+                // Default: post current week's board (admin only)
+                if (!CallerHasAdminRole())
+                {
+                    await ReplyAsync("Only users with R4/R5 roles can post bunker boards. Use `!bunker weeks` to list available weeks.");
                     return;
                 }
 
-                // Otherwise post the bunker registration message with reactions
-                await PostBunkerRegistrationMessage();
+                var currentWeek = WeekKeyFromDate(DateTimeOffset.UtcNow);
+                await PostBunkerRegistrationMessage(currentWeek);
             }
             catch (Exception ex)
             {
@@ -82,45 +168,52 @@ namespace SOSS555Bot.Commands.Bunker
         {
             var builder = new StringBuilder();
             builder.AppendLine("**Bunker Registration Help**");
-            builder.AppendLine("**Required Role:** `R4` or `R5` (admin only)");
+            builder.AppendLine("**Required Role to post:** `R4` or `R5` (admin only)");
             builder.AppendLine();
-            builder.AppendLine("**Command:**");
-            builder.AppendLine("`!bunker` or `!bunk` - Post a bunker registration message");
+            builder.AppendLine("**Commands:**");
+            builder.AppendLine("`!bunker post` - Post this week's registration board (admin)");
+            builder.AppendLine("`!bunker post 2026-W09` - Post a specific week (admin)");
+            builder.AppendLine("`!bunker weeks` - List weeks with registrations");
+            builder.AppendLine("`!bunker help` - Show this help");
             builder.AppendLine();
-            builder.AppendLine("**How It Works:**");
-            builder.AppendLine("1. Use `!bunker` to post the registration board");
-            builder.AppendLine("2. React with emoji to register/unregister for bunkers");
-            builder.AppendLine("3. Each user can register for up to 3 bunkers");
-            builder.AppendLine("4. If you try to register for a 4th, your oldest registration is removed");
-            builder.AppendLine("5. Alliance tags come from your Discord role (3-letter role name)");
-            builder.AppendLine();
-            builder.AppendLine("**Available Bunkers:**");
-            builder.AppendLine("**Front:** F1 F2 F3 F4");
-            builder.AppendLine("**Back:** B1 B2 B3 B4 B5 B6 B7 B8 B9 B10 B11 B12");
-            builder.AppendLine();
-            builder.AppendLine("**Reaction Emojis:**");
-            builder.AppendLine("Front: 1️⃣ 2️⃣ 3️⃣ 4️⃣ (for F1-F4)");
-            builder.AppendLine("Back: 5️⃣ 6️⃣ 7️⃣ 8️⃣ 9️⃣ 🔟 🇦 🇧 🇨 🇩 🇪 🇫 (for B1-B12)");
-            builder.AppendLine();
-            builder.AppendLine("**Rules:**");
-            builder.AppendLine("- Only `R4` and `R5` roles can use this command");
-            builder.AppendLine("- Multiple users can register for the same bunker (competing alliances allowed)");
-            builder.AppendLine("- Max 3 registrations per user (oldest is removed if you register for a 4th)");
-            builder.AppendLine("- Alliance tag is determined by your 3-letter Discord role");
+            builder.AppendLine("React with emoji on a posted board to register/unregister for that week's bunkers.");
+            builder.AppendLine("Each week is independent; you may register separately for each week.");
             await ReplyAsync(builder.ToString());
         }
 
-        private async Task PostBunkerRegistrationMessage()
+        private async Task ShowWeeks()
+        {
+            var weeks = Store.GetWeeks(Context.Guild.Id)
+                .OrderByDescending(x => x)
+                .ToList();
+
+            if (!weeks.Any())
+            {
+                await ReplyAsync("No weeks found.");
+                return;
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine("**Registered weeks:**");
+            foreach (var wk in weeks)
+            {
+                sb.AppendLine(wk);
+            }
+
+            await ReplyAsync(sb.ToString());
+        }
+
+        private async Task PostBunkerRegistrationMessage(string weekKey)
         {
             var builder = new StringBuilder();
-            builder.AppendLine("**Bunker Registration** - React to register/unregister for bunkers (max 3 per user)");
+            builder.AppendLine($"**Bunker Registration — Week {weekKey}** - React to register/unregister for bunkers (max 3 per user per week)");
             builder.AppendLine();
-            
+
             var bunkerEmojis = BunkerManager.BunkerEmojis;
             var bunkerList = BunkerManager.BunkerList;
 
-            var registrations = Store.GetAllRegistrations(Context.Guild.Id);
-            
+            var registrations = Store.GetAllRegistrations(Context.Guild.Id, weekKey);
+
             builder.AppendLine("**Front:**");
             for (int i = 0; i < 4; i++)
             {
@@ -148,13 +241,13 @@ namespace SOSS555Bot.Commands.Bunker
                 await msg.AddReactionAsync(new Emoji(emoji));
             }
 
-            BunkerManager.RegisterMessage(msg.Id, msg);
+            BunkerManager.RegisterMessage(msg.Id, msg, weekKey);
         }
 
         // Bunker registration manager for handling reactions
         public static class BunkerManager
         {
-            public static readonly string[] BunkerEmojis = 
+            public static readonly string[] BunkerEmojis =
             {
                 "1️⃣", "2️⃣", "3️⃣", "4️⃣",           // F1-F4
                 "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟",  // B1-B6
@@ -166,18 +259,21 @@ namespace SOSS555Bot.Commands.Bunker
                 "F1", "F2", "F3", "F4", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", "B11", "B12"
             };
 
-            private static readonly Dictionary<ulong, IUserMessage> _registrationMessages
-                = new Dictionary<ulong, IUserMessage>();
+            // messageId -> (message, weekKey)
+            private static readonly Dictionary<ulong, (IUserMessage message, string week)> _registrationMessages
+                = new Dictionary<ulong, (IUserMessage, string)>();
 
-            public static void RegisterMessage(ulong messageId, IUserMessage message)
+            public static void RegisterMessage(ulong messageId, IUserMessage message, string weekKey)
             {
-                _registrationMessages[messageId] = message;
+                _registrationMessages[messageId] = (message, weekKey);
             }
 
             public static Task<(bool Success, string? BunkerRemoved)> TryHandleReactionAsync(SocketReaction reaction, IUserMessage message, string allianceTag)
             {
-                if (!_registrationMessages.ContainsKey(reaction.MessageId))
+                if (!_registrationMessages.TryGetValue(reaction.MessageId, out var entry))
                     return Task.FromResult<(bool, string?)>((false, null));
+
+                var weekKey = entry.week;
 
                 // map to guild id from the message's channel
                 var guild = (message.Channel as SocketGuildChannel)?.Guild;
@@ -194,36 +290,62 @@ namespace SOSS555Bot.Commands.Bunker
                 var userId = reaction.UserId;
 
                 // Toggle registration: if already registered, unregister; otherwise register
-                if (Store.IsUserRegisteredForBunker(guildId, userId, bunker))
+                if (Store.IsUserRegisteredForBunker(guildId, userId, weekKey, bunker))
                 {
-                    Store.Unregister(guildId, bunker, userId);
+                    Store.Unregister(guildId, weekKey, bunker, userId);
                     return Task.FromResult<(bool, string?)>((true, null)); // Successfully unregistered
                 }
                 else
                 {
-                    // If user at limit, remove oldest registration first and return which one was removed
-                    if (Store.GetUserRegistrationCount(guildId, userId) >= MaxRegistrationsPerUser)
+                    // If user at limit (per week), remove oldest registration first and return which one was removed
+                    if (Store.GetUserRegistrationCount(guildId, userId, weekKey) >= MaxRegistrationsPerUser)
                     {
-                        var removed = Store.RemoveOldestRegistrationForUser(guildId, userId);
+                        var removed = Store.RemoveOldestRegistrationForUser(guildId, userId, weekKey);
                         // After removal, proceed to register the new bunker
-                        Store.Register(guildId, bunker, userId, allianceTag);
+                        Store.Register(guildId, weekKey, bunker, userId, allianceTag);
                         return Task.FromResult<(bool, string?)>((true, removed));
                     }
 
-                    Store.Register(guildId, bunker, userId, allianceTag);
+                    Store.Register(guildId, weekKey, bunker, userId, allianceTag);
                     return Task.FromResult<(bool, string?)>((true, null)); // Successfully registered
                 }
             }
 
-            
+            public static Task<bool> TryHandleReactionRemovedAsync(SocketReaction reaction, IUserMessage message)
+            {
+                if (!_registrationMessages.TryGetValue(reaction.MessageId, out var entry))
+                    return Task.FromResult(false);
+
+                var weekKey = entry.week;
+
+                // map to guild id from the message's channel
+                var guild = (message.Channel as SocketGuildChannel)?.Guild;
+                if (guild == null) return Task.FromResult(false);
+                var guildId = guild.Id;
+
+                // Map emoji to bunker index
+                var emoji = reaction.Emote.Name;
+                int bunkerIndex = Array.IndexOf(BunkerEmojis, emoji);
+                if (bunkerIndex < 0)
+                    return Task.FromResult(false);
+
+                var bunker = BunkerList[bunkerIndex];
+                var userId = reaction.UserId;
+
+                // Unregister the user for this bunker (idempotent)
+                var removed = Store.Unregister(guildId, weekKey, bunker, userId);
+                return Task.FromResult(removed);
+            }
 
             public static async Task UpdateMessageDisplayAsync(ulong messageId)
             {
-                if (!_registrationMessages.TryGetValue(messageId, out var message))
+                if (!_registrationMessages.TryGetValue(messageId, out var entry))
                     return;
+                var message = entry.message;
+                var week = entry.week;
                 var guild = (message.Channel as SocketGuildChannel)?.Guild;
                 if (guild == null) return;
-                var content = BuildRegistrationContent(guild.Id);
+                var content = BuildRegistrationContent(guild.Id, week);
                 try
                 {
                     await message.ModifyAsync(m => m.Content = content);
@@ -234,13 +356,13 @@ namespace SOSS555Bot.Commands.Bunker
                 }
             }
 
-            private static string BuildRegistrationContent(ulong guildId)
+            private static string BuildRegistrationContent(ulong guildId, string weekKey)
             {
                 var builder = new StringBuilder();
-                builder.AppendLine("**Bunker Registration** - React to register/unregister for bunkers (max 3 per user)");
+                builder.AppendLine($"**Bunker Registration — Week {weekKey}** - React to register/unregister for bunkers (max 3 per user per week)");
                 builder.AppendLine();
-                
-                var registrations = Store.GetAllRegistrations(guildId);
+
+                var registrations = Store.GetAllRegistrations(guildId, weekKey);
 
                 builder.AppendLine("**Front:**");
                 for (int i = 0; i < 4; i++)
@@ -265,7 +387,7 @@ namespace SOSS555Bot.Commands.Bunker
             }
         }
 
-        // Simple CSV-backed store
+        // Simple CSV-backed store, now keyed per-week
         private class BunkerStore
         {
             private static readonly string DataDir;
@@ -273,7 +395,7 @@ namespace SOSS555Bot.Commands.Bunker
             private static readonly object Sync = new object();
             private const string Delim = "|";
 
-            // In-memory cache: key = "{guildId}:{bunker}" -> List<(userId, allianceTag, timestampMs)>
+            // In-memory cache: key = "{guildId}:{week}:{bunker}" -> List<(userId, allianceTag, timestampMs)>
             private Dictionary<string, List<(ulong userId, string allianceTag, long ts)>> Registrations
                 = new Dictionary<string, List<(ulong, string, long)>>(StringComparer.OrdinalIgnoreCase);
 
@@ -309,22 +431,23 @@ namespace SOSS555Bot.Commands.Bunker
                                     continue;
 
                                 var parts = line.Split(Delim);
-                                if (parts.Length < 4)
+                                // expected format: guildId|week|bunker|userId|allianceTag|ts
+                                if (parts.Length < 5)
                                     continue;
 
-                                // expected format: guildId|bunker|userId|allianceTag|ts
                                 if (!ulong.TryParse(parts[0].Trim(), out var guildId))
                                     continue;
-                                var bunker = parts[1].Trim();
-                                if (!ulong.TryParse(parts[2].Trim(), out var userId))
+                                var week = parts[1].Trim();
+                                var bunker = parts[2].Trim();
+                                if (!ulong.TryParse(parts[3].Trim(), out var userId))
                                     continue;
 
-                                var allianceTag = parts[3].Trim();
+                                var allianceTag = parts[4].Trim();
                                 long ts = 0;
-                                if (parts.Length >= 5 && long.TryParse(parts[4].Trim(), out var parsedTs))
+                                if (parts.Length >= 6 && long.TryParse(parts[5].Trim(), out var parsedTs))
                                     ts = parsedTs;
 
-                                var key = $"{guildId}:{bunker}";
+                                var key = $"{guildId}:{week}:{bunker}";
                                 if (!Registrations.ContainsKey(key))
                                     Registrations[key] = new List<(ulong, string, long)>();
 
@@ -350,14 +473,15 @@ namespace SOSS555Bot.Commands.Bunker
                         {
                             foreach (var kvp in Registrations)
                             {
-                                var key = kvp.Key; // format: guildId:bunker
-                                var idx = key.IndexOf(':');
-                                if (idx <= 0) continue;
-                                var guildStr = key.Substring(0, idx);
-                                var bunker = key.Substring(idx + 1);
+                                var key = kvp.Key; // format: guildId:week:bunker
+                                var parts = key.Split(':', 3);
+                                if (parts.Length < 3) continue;
+                                var guildStr = parts[0];
+                                var week = parts[1];
+                                var bunker = parts[2];
                                 foreach (var (userId, allianceTag, ts) in kvp.Value)
                                 {
-                                    writer.WriteLine($"{guildStr}{Delim}{bunker}{Delim}{userId}{Delim}{allianceTag}{Delim}{ts}");
+                                    writer.WriteLine($"{guildStr}{Delim}{week}{Delim}{bunker}{Delim}{userId}{Delim}{allianceTag}{Delim}{ts}");
                                 }
                             }
                         }
@@ -369,15 +493,15 @@ namespace SOSS555Bot.Commands.Bunker
                 }
             }
 
-            public void Register(ulong guildId, string bunker, ulong userId, string allianceTag)
+            public void Register(ulong guildId, string week, string bunker, ulong userId, string allianceTag)
             {
                 lock (Sync)
                 {
-                    var key = $"{guildId}:{bunker}";
+                    var key = $"{guildId}:{week}:{bunker}";
                     if (!Registrations.ContainsKey(key))
                         Registrations[key] = new List<(ulong, string, long)>();
 
-                    // Only add if not already registered for this bunker.
+                    // Only add if not already registered for this bunker in this week.
                     if (Registrations[key].Any(x => x.userId == userId))
                         return;
 
@@ -387,17 +511,17 @@ namespace SOSS555Bot.Commands.Bunker
             }
 
             /// <summary>
-            /// Removes the oldest registration (by timestamp) for the given user across all bunkers.
+            /// Removes the oldest registration (by timestamp) for the given user within the specified week.
             /// Returns the bunker name that was removed, or null if none removed.
             /// </summary>
-            public string? RemoveOldestRegistrationForUser(ulong guildId, ulong userId)
+            public string? RemoveOldestRegistrationForUser(ulong guildId, ulong userId, string week)
             {
                 lock (Sync)
                 {
                     string? foundKey = null;
                     string? foundBunker = null;
                     long oldestTs = long.MaxValue;
-                    var prefix = $"{guildId}:";
+                    var prefix = $"{guildId}:{week}:";
                     foreach (var kvp in Registrations.Where(k => k.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
                     {
                         foreach (var entry in kvp.Value.Where(x => x.userId == userId))
@@ -406,7 +530,7 @@ namespace SOSS555Bot.Commands.Bunker
                             {
                                 oldestTs = entry.ts;
                                 foundKey = kvp.Key;
-                                var idx = kvp.Key.IndexOf(':');
+                                var idx = kvp.Key.LastIndexOf(':');
                                 foundBunker = idx >= 0 ? kvp.Key.Substring(idx + 1) : kvp.Key;
                             }
                         }
@@ -422,11 +546,11 @@ namespace SOSS555Bot.Commands.Bunker
                 }
             }
 
-            public bool Unregister(ulong guildId, string bunker, ulong userId)
+            public bool Unregister(ulong guildId, string week, string bunker, ulong userId)
             {
                 lock (Sync)
                 {
-                    var key = $"{guildId}:{bunker}";
+                    var key = $"{guildId}:{week}:{bunker}";
                     if (!Registrations.ContainsKey(key))
                         return false;
 
@@ -438,32 +562,36 @@ namespace SOSS555Bot.Commands.Bunker
                 }
             }
 
-            public int GetUserRegistrationCount(ulong guildId, ulong userId)
+            public int GetUserRegistrationCount(ulong guildId, ulong userId, string week)
             {
                 lock (Sync)
                 {
-                    var prefix = $"{guildId}:";
+                    var prefix = $"{guildId}:{week}:";
                     return Registrations.Where(kv => kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                         .Sum(kv => kv.Value.Count(x => x.userId == userId));
                 }
             }
 
-            public bool IsUserRegisteredForBunker(ulong guildId, ulong userId, string bunker)
+            public bool IsUserRegisteredForBunker(ulong guildId, ulong userId, string week, string bunker)
             {
                 lock (Sync)
                 {
-                    var key = $"{guildId}:{bunker}";
+                    var key = $"{guildId}:{week}:{bunker}";
                     return Registrations.ContainsKey(key)
                         && Registrations[key].Any(x => x.userId == userId);
                 }
             }
 
-            public Dictionary<string, List<string>> GetAllRegistrations(ulong guildId)
+            /// <summary>
+            /// Returns registrations for the specified guild and week.
+            /// If no entries exist for that week an empty dictionary is returned.
+            /// </summary>
+            public Dictionary<string, List<string>> GetAllRegistrations(ulong guildId, string week)
             {
                 lock (Sync)
                 {
                     var result = new Dictionary<string, List<string>>();
-                    var prefix = $"{guildId}:";
+                    var prefix = $"{guildId}:{week}:";
                     foreach (var kvp in Registrations.Where(k => k.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
                     {
                         var bunker = kvp.Key.Substring(prefix.Length);
@@ -475,6 +603,29 @@ namespace SOSS555Bot.Commands.Bunker
                         result[bunker] = alliances;
                     }
                     return result;
+                }
+            }
+
+            /// <summary>
+            /// Returns the distinct week keys for which this guild has registrations.
+            /// </summary>
+            public List<string> GetWeeks(ulong guildId)
+            {
+                lock (Sync)
+                {
+                    var prefix = $"{guildId}:";
+                    var weeks = Registrations.Keys
+                        .Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        .Select(k =>
+                        {
+                            var parts = k.Substring(prefix.Length).Split(':', 2);
+                            return parts.Length >= 1 ? parts[0] : null;
+                        })
+                        .Where(w => !string.IsNullOrEmpty(w))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderByDescending(w => w)
+                        .ToList()!;
+                    return weeks;
                 }
             }
         }
