@@ -3,6 +3,10 @@
   "WorkspaceRootPath": "D:\\Data\\Dropbox\\Software\\GIT\\SOS-S555-Bot\\SOS-S555-Bot\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{2910AF4C-D467-6595-1CCC-FBF41A6E723F}|SoS-S555-Bot.csproj|d:\\data\\dropbox\\software\\git\\sos-s555-bot\\sos-s555-bot\\readme.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{2910AF4C-D467-6595-1CCC-FBF41A6E723F}|SoS-S555-Bot.csproj|solutionrelative:readme.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{2910AF4C-D467-6595-1CCC-FBF41A6E723F}|SoS-S555-Bot.csproj|d:\\data\\dropbox\\software\\git\\sos-s555-bot\\sos-s555-bot\\commands\\bunker\\bunkercommand.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{2910AF4C-D467-6595-1CCC-FBF41A6E723F}|SoS-S555-Bot.csproj|solutionrelative:commands\\bunker\\bunkercommand.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
@@ -18,15 +22,24 @@
       "DocumentGroups": [
         {
           "DockedWidth": 272,
-          "SelectedChildIndex": 6,
+          "SelectedChildIndex": 0,
           "Children": [
             {
-              "$type": "Bookmark",
-              "Name": "ST:0:0:{40ea2e6b-2121-4bb8-a43e-c83c04b51041}"
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "README.md",
+              "DocumentMoniker": "D:\\Data\\Dropbox\\Software\\GIT\\SOS-S555-Bot\\SOS-S555-Bot\\README.md",
+              "RelativeDocumentMoniker": "README.md",
+              "ToolTip": "D:\\Data\\Dropbox\\Software\\GIT\\SOS-S555-Bot\\SOS-S555-Bot\\README.md",
+              "RelativeToolTip": "README.md",
+              "ViewState": "AgIAAFsAAAAAAAAAAAAqwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2026-03-08T18:16:55.575Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Bookmark",
-              "Name": "ST:0:0:{cce594b6-0c39-4442-ba28-10c64ac7e89f}"
+              "Name": "ST:0:0:{40ea2e6b-2121-4bb8-a43e-c83c04b51041}"
             },
             {
               "$type": "Bookmark",
@@ -37,12 +50,8 @@
               "Name": "ST:0:0:{1c64b9c2-e352-428e-a56d-0ace190b99a6}"
             },
             {
-              "$type": "Bookmark",
-              "Name": "ST:0:0:{56df62a4-05a3-4e5b-aa1a-99371ccfb997}"
-            },
-            {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 2,
               "Title": "Bot.cs",
               "DocumentMoniker": "D:\\Data\\Dropbox\\Software\\GIT\\SOS-S555-Bot\\SOS-S555-Bot\\Bot.cs",
               "RelativeDocumentMoniker": "Bot.cs",
@@ -54,7 +63,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 1,
               "Title": "BunkerCommand.cs",
               "DocumentMoniker": "D:\\Data\\Dropbox\\Software\\GIT\\SOS-S555-Bot\\SOS-S555-Bot\\Commands\\Bunker\\BunkerCommand.cs",
               "RelativeDocumentMoniker": "Commands\\Bunker\\BunkerCommand.cs",
@@ -64,6 +73,14 @@
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-03-02T23:50:30.474Z",
               "EditorCaption": ""
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{cce594b6-0c39-4442-ba28-10c64ac7e89f}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{56df62a4-05a3-4e5b-aa1a-99371ccfb997}"
             }
           ]
         }
