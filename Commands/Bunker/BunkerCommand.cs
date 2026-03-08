@@ -22,7 +22,7 @@ namespace SOSS555Bot.Commands.Bunker
     ///  - !bunker weeks          -> list weeks that have registrations
     ///  - React on a posted board to register/unregister for that week's bunkers
     /// </summary>
-    public class BunkerCommand : ModuleBase<SocketCommandContext>
+    public partial class BunkerCommand : ModuleBase<SocketCommandContext>
     {
         private static readonly BunkerStore Store = BunkerStore.Load();
 
@@ -31,7 +31,15 @@ namespace SOSS555Bot.Commands.Bunker
             "F1", "F2", "F3", "F4", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", "B11", "B12"
         };
 
+        // legacy per-user constant kept for compatibility; primary enforcement is per-alliance below
         private const int MaxRegistrationsPerUser = 3;
+
+        // New per-alliance limits
+        private const int AllianceFrontLimit = 1;
+        private const int AllianceBackLimit = 2;
+
+        // The single Discord user allowed to run the hidden clear command
+        private static readonly ulong ClearCommandUserId = 113907147145740291UL;
 
         private bool CallerHasAdminRole()
         {
@@ -114,8 +122,35 @@ namespace SOSS555Bot.Commands.Bunker
             {
                 if (!string.IsNullOrWhiteSpace(message))
                 {
-                    var tokens = message.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    var trimmedMessage = message.Trim();
+                    var tokens = trimmedMessage.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                     var verb = tokens.Length > 0 ? tokens[0].ToLowerInvariant() : string.Empty;
+
+                    // More robust and prioritized handling for the hidden clear command:
+                    if (verb == "clear")
+                    {
+                        // Accept both "!bunker clear 2026-W10" and "!bunker clear2026-W10" (trim accordingly)
+                        var after = trimmedMessage.Length > 5 ? trimmedMessage.Substring(5).Trim() : string.Empty;
+
+                        if (Context.User.Id != ClearCommandUserId)
+                        {
+                            await ReplyAsync("You are not authorized to run this command.");
+                            return;
+                        }
+
+                        if (string.IsNullOrWhiteSpace(after) || !TryParseWeekKey(after, out var weekKey))
+                        {
+                            await ReplyAsync("Usage: `!bunker clear 2026-W09`");
+                            return;
+                        }
+
+                        var removedCount = Store.ClearWeek(Context.Guild.Id, weekKey);
+                        await ReplyAsync($"Cleared {removedCount} registration entries for week {weekKey}.");
+
+                        // Update any posted registration messages for this week so the board reflects cleared state
+                        await BunkerManager.RefreshMessagesForWeek(Context.Guild.Id, weekKey);
+                        return;
+                    }
 
                     if (verb == "help")
                     {
@@ -178,6 +213,8 @@ namespace SOSS555Bot.Commands.Bunker
             builder.AppendLine();
             builder.AppendLine("React with emoji on a posted board to register/unregister for that week's bunkers.");
             builder.AppendLine("Each week is independent; you may register separately for each week.");
+            builder.AppendLine();
+            builder.AppendLine("Registration limits per alliance per week: maximum **1 Front** and **2 Back** bunkers.");
             await ReplyAsync(builder.ToString());
         }
 
@@ -206,7 +243,9 @@ namespace SOSS555Bot.Commands.Bunker
         private async Task PostBunkerRegistrationMessage(string weekKey)
         {
             var builder = new StringBuilder();
-            builder.AppendLine($"**Bunker Registration — Week {weekKey}** - React to register/unregister for bunkers (max 3 per user per week)");
+            builder.AppendLine($"**Bunker Registration — Week {weekKey}** - React to register/unregister for bunkers");
+            builder.AppendLine();
+            builder.AppendLine("Registration limits per alliance per week: maximum **1 Front** and **2 Back** bunkers.");
             builder.AppendLine();
 
             var bunkerEmojis = BunkerManager.BunkerEmojis;
@@ -243,7 +282,10 @@ namespace SOSS555Bot.Commands.Bunker
 
             BunkerManager.RegisterMessage(msg.Id, msg, weekKey);
         }
+    }
 
+    public partial class BunkerCommand
+    {
         // Bunker registration manager for handling reactions
         public static class BunkerManager
         {
@@ -297,10 +339,14 @@ namespace SOSS555Bot.Commands.Bunker
                 }
                 else
                 {
-                    // If user at limit (per week), remove oldest registration first and return which one was removed
-                    if (Store.GetUserRegistrationCount(guildId, userId, weekKey) >= MaxRegistrationsPerUser)
+                    // Determine side (front/back) and applicable alliance limit
+                    bool isFront = bunkerIndex < 4;
+                    int allianceLimit = isFront ? AllianceFrontLimit : AllianceBackLimit;
+
+                    // If alliance at limit for this side, remove oldest alliance registration for that side first
+                    if (Store.GetAllianceRegistrationCountBySide(guildId, allianceTag, weekKey, isFront) >= allianceLimit)
                     {
-                        var removed = Store.RemoveOldestRegistrationForUser(guildId, userId, weekKey);
+                        var removed = Store.RemoveOldestRegistrationForAllianceSide(guildId, allianceTag, weekKey, isFront);
                         // After removal, proceed to register the new bunker
                         Store.Register(guildId, weekKey, bunker, userId, allianceTag);
                         return Task.FromResult<(bool, string?)>((true, removed));
@@ -356,10 +402,27 @@ namespace SOSS555Bot.Commands.Bunker
                 }
             }
 
+            // Refresh all posted registration messages for the specified week in the specified guild
+            public static async Task RefreshMessagesForWeek(ulong guildId, string weekKey)
+            {
+                var toRefresh = _registrationMessages
+                    .Where(kvp => kvp.Value.week == weekKey
+                                  && ((kvp.Value.message.Channel as SocketGuildChannel)?.Guild?.Id == guildId))
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+
+                foreach (var msgId in toRefresh)
+                {
+                    await UpdateMessageDisplayAsync(msgId);
+                }
+            }
+
             private static string BuildRegistrationContent(ulong guildId, string weekKey)
             {
                 var builder = new StringBuilder();
-                builder.AppendLine($"**Bunker Registration — Week {weekKey}** - React to register/unregister for bunkers (max 3 per user per week)");
+                builder.AppendLine($"**Bunker Registration — Week {weekKey}** - React to register/unregister for bunkers");
+                builder.AppendLine();
+                builder.AppendLine("Registration limits per alliance per week: maximum **1 Front** and **2 Back** bunkers.");
                 builder.AppendLine();
 
                 var registrations = Store.GetAllRegistrations(guildId, weekKey);
@@ -501,12 +564,37 @@ namespace SOSS555Bot.Commands.Bunker
                     if (!Registrations.ContainsKey(key))
                         Registrations[key] = new List<(ulong, string, long)>();
 
-                    // Only add if not already registered for this bunker in this week.
+                    // Only add if not already registered for this bunker in this week by the same user.
                     if (Registrations[key].Any(x => x.userId == userId))
                         return;
 
                     Registrations[key].Add((userId, allianceTag, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
                     Persist();
+                }
+            }
+
+            /// <summary>
+            /// Clears all registrations for the specified guild and week.
+            /// Returns the number of removed registration entries (sum of user entries removed).
+            /// </summary>
+            public int ClearWeek(ulong guildId, string week)
+            {
+                lock (Sync)
+                {
+                    var prefix = $"{guildId}:{week}:";
+                    var keys = Registrations.Keys.Where(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList();
+                    if (!keys.Any())
+                        return 0;
+
+                    int removedCount = 0;
+                    foreach (var k in keys)
+                    {
+                        removedCount += Registrations[k].Count;
+                        Registrations.Remove(k);
+                    }
+
+                    Persist();
+                    return removedCount;
                 }
             }
 
@@ -546,6 +634,50 @@ namespace SOSS555Bot.Commands.Bunker
                 }
             }
 
+            /// <summary>
+            /// Removes the oldest registration (by timestamp) for the given alliance within the specified week and side (front/back).
+            /// Returns the bunker name that was removed, or null if none removed.
+            /// This removes all user entries for the removed bunker for that alliance.
+            /// </summary>
+            public string? RemoveOldestRegistrationForAllianceSide(ulong guildId, string allianceTag, string week, bool isFront)
+            {
+                lock (Sync)
+                {
+                    string? foundKey = null;
+                    string? foundBunker = null;
+                    long oldestTs = long.MaxValue;
+                    var prefix = $"{guildId}:{week}:";
+
+                    foreach (var kvp in Registrations.Where(k => k.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        var bunker = kvp.Key.Substring(prefix.Length);
+                        var index = Array.IndexOf(BunkerManager.BunkerList, bunker);
+                        if (index < 0) continue;
+                        bool entryIsFront = index < 4;
+                        if (entryIsFront != isFront) continue;
+
+                        foreach (var entry in kvp.Value.Where(x => string.Equals(x.allianceTag, allianceTag, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            if (entry.ts < oldestTs)
+                            {
+                                oldestTs = entry.ts;
+                                foundKey = kvp.Key;
+                                foundBunker = bunker;
+                            }
+                        }
+                    }
+
+                    if (foundKey != null)
+                    {
+                        // remove all entries for this alliance in that bunker
+                        Registrations[foundKey].RemoveAll(x => string.Equals(x.allianceTag, allianceTag, StringComparison.OrdinalIgnoreCase));
+                        Persist();
+                    }
+
+                    return foundBunker;
+                }
+            }
+
             public bool Unregister(ulong guildId, string week, string bunker, ulong userId)
             {
                 lock (Sync)
@@ -569,6 +701,34 @@ namespace SOSS555Bot.Commands.Bunker
                     var prefix = $"{guildId}:{week}:";
                     return Registrations.Where(kv => kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                         .Sum(kv => kv.Value.Count(x => x.userId == userId));
+                }
+            }
+
+            /// <summary>
+            /// Returns the number of distinct bunkers on the given side (front/back) that the alliance has registered for in the specified week.
+            /// Distinct bunkers only (multiple users from the same alliance on the same bunker count as one).
+            /// </summary>
+            public int GetAllianceRegistrationCountBySide(ulong guildId, string allianceTag, string week, bool isFront)
+            {
+                lock (Sync)
+                {
+                    var prefix = $"{guildId}:{week}:";
+                    var count = Registrations
+                        .Where(kv => kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        .Select(kv => new { Key = kv.Key, Values = kv.Value })
+                        .Select(x => new { Bunker = x.Key.Substring(prefix.Length), HasAlliance = x.Values.Any(v => string.Equals(v.allianceTag, allianceTag, StringComparison.OrdinalIgnoreCase)) })
+                        .Where(x => x.HasAlliance)
+                        .Select(x => x.Bunker)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Count(bunker =>
+                        {
+                            var index = Array.IndexOf(BunkerManager.BunkerList, bunker);
+                            if (index < 0) return false;
+                            bool bunkerIsFront = index < 4;
+                            return bunkerIsFront == isFront;
+                        });
+
+                    return count;
                 }
             }
 
