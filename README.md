@@ -1,116 +1,103 @@
 # SOSS555Bot
 A Discord bot for State 555 in State of Survival
 
-# Planned features: as discussed in https://discordapp.com/channels/1136616286307229737/1448615839887523881/1475899222149566596
-Discord bot, and I think I could make all the points specified in this message possible quite easily - And customise it to whatever needs people want.
+## Overview
+This project is a Discord bot targeting .NET 9 that implements two primary feature areas: "gov" (government signups, raffles, and voting) and "bunker" (bunker registration via reactions). The bot uses `Discord.Net` (`DiscordSocketClient` and `CommandService`) and `Microsoft.Extensions.Configuration` for configuration.
 
-**Configuration**
+## Planned Features
+As discussed in [this Discord message](https://discordapp.com/channels/1136616286307229737/1448615839887523881/1475899222149566596), the bot is designed to be customizable to meet the needs of the community. 
+
+## Configuration
 
 The bot uses `Microsoft.Extensions.Configuration` and supports multiple layers of settings:
 
 1. `appsettings.json` in the working directory (checked into this repo as a template)
-2. user secrets (during development)
-3. an *optional* external JSON file called `botsettings.json` located alongside the Discord token file
-4. an in‑memory override if the token file contains a value
+2. User secrets (during development)
+3. An *optional* external JSON file called `botsettings.json` located alongside the Discord token file
+4. An in‑memory override if the token file contains a value
 
-By default the token file path is hard‑coded to `D:\Data\Dropbox\Software\GIT\SOS-S555-Bot\Discord-token.txt` but you can override it in any of the configuration sources using the `DiscordTokenFile` key.
+By default, the token file path is hard‑coded to `D:\Data\Dropbox\Software\GIT\SOS-S555-Bot\Discord-token.txt`, but you can override it in any of the configuration sources using the `DiscordTokenFile` key.
 
-The configuration schema now contains these sections:
+### Configuration & Startup
+- Configuration hierarchy (highest precedence last): `appsettings.json`, user secrets, optional external `botsettings.json`, and an in-memory override if the token file contains a value.
+- Configuration keys of interest:
+  - `Paths.BaseDir`, `Paths.DataDir`, `Paths.LogsDir`, `Paths.ConfigDir`, `Paths.StoresDir` (see sample in repo).
+  - `DiscordTokenFile` (path to token file can be overridden).
+  - `DiscordToken` (actual token value read into configuration or via token file override).
+- The bot sets a simple presence on connect (`SOSS555Bot`) and waits for the `Ready` event (30s timeout) before enabling handlers.
 
-```json
-{
-  "Paths": {
-    "BaseDir": "D:\\Data\\Dropbox\\Software\\GIT\\SOS-S555-Bot",
-    "DataDir": "${Paths:BaseDir}\\data",
-    "LogsDir": "${Paths:BaseDir}\\logs",
-    "ConfigDir": "${Paths:BaseDir}\\config",        // optional
-    "StoresDir": "${Paths:BaseDir}\\stores"       // optional
-  },
-  "DiscordTokenFile": "D:\\Data\\Dropbox\\Software\\GIT\\SOS-S555-Bot\\Discord-token.txt",
-  "Servers": {
-    "GuildIds": [123456789012345678, 987654321098765432]
-  }
-}
-```
+### Logging
+- All command invocations are logged to console and appended (JSON lines) to a file `commands.log` under `Paths.LogsDir` (or `./logs` by default).
+- Internal Discord.Net log messages are printed to the console stderr for troubleshooting.
 
-- **Paths.BaseDir** – root for other paths (default shown above).
-- **Paths.DataDir** / **Paths.LogsDir** – where CSV and log files are placed (the bot creates the directories if missing).
-- **Paths.ConfigDir** and **Paths.StoresDir** – additional locations you can use for custom configuration or to split storage; currently unused but reserved for future features.
-- **Servers:GuildIds** – an *optional* array of guild (server) IDs the bot is expected to serve. When present, bukker/`gov` stores are scoped by guild (see below). This property is read at startup but not enforced at runtime.
-
-To create the external config file you can still use the provided example:
-
-```powershell
-Copy-Item .\botsettings.json.example D:\Data\Dropbox\Software\GIT\SOS-S555-Bot\botsettings.json
-# then edit the JSON above as needed
-```
-
-### File layout
+### File Layout
 The bot persists state under `DataDir` (defaults to `BaseDir/data`):
 
 | File | Description |
 |------|-------------|
-| `registrations.csv` | government registrations (guild-scoped: key is `guildId:week`) |
-| `votes.csv` | vote records (poll keys prefixed with guild ID) |
-| `bunker_registrations.csv` | bunker registrations (columns: `guildId|bunker|userId|allianceTag|ts`) |
+| `registrations.csv` | Government registrations (guild-scoped: key is `guildId:week`) |
+| `votes.csv` | Vote records (poll keys prefixed with guild ID) |
+| `bunker_registrations.csv` | Bunker registrations (columns: `guildId|week|bunker|userId|allianceTag|ts`) |
 
-When the bot is installed on multiple servers it keeps a single set of CSVs but includes the guild ID in every row. This allows running the same bot binary across servers without collision.
+When the bot is installed on multiple servers, it keeps a single set of CSVs but includes the guild ID in every row. This allows running the same bot binary across servers without collision.
 
-	**Roles and Permissions**
+## Commands & Interaction
+- Command prefix is `!`. Message handling is performed by `Bot.HandleCommandAsync`, which strips the prefix and executes commands via `CommandService`.
+- The bot exposes at least the following command groups:
+  - `!gov` — Handles government registrations, raffles, and reaction-based voting.
+  - `!bunker` — Posts bunker registration boards and provides helper commands.
 
-	- **SOS-S555-Access**: Required to use the `!gov` command group (register/unregister/list/raffle/vote/help).
-	- **R5**: Required to start a vote or perform bunker registration message updates. Only R5 users can initiate `!gov vote` or issue `!bunker help`.
-	- **R4 / R5**: Administrative roles for overriding other users; necessary when registering/unregistering on behalf of somebody else in both gov and bunker flows.
-	- **Send Messages**: Bot commands use `[RequireUserPermission(GuildPermission.SendMessages)]` to ensure non‑spammers can use them.
-	- **Manage Messages**: The bot may remove invalid reactions (e.g. old vote choices) and requires this permission in order to edit messages it has posted.
+### Bunker Command Highlights (Implemented)
+- Command group: `!bunker` (aliases: `!bunk`). Requires guild context and user permission to send messages.
+- Subcommands implemented:
+  - `!bunker post [week]` — Posts a registration board for the specified week (or current ISO-like week if omitted). Only users with role `R4` or `R5` may post boards.
+  - `!bunker weeks` — Lists week keys that currently have registrations for the guild.
+  - `!bunker help` — Displays usage and rules.
+  - `!bunker clear <week>` — A hidden clear command that only a single configured user may run (user id `113907147145740291`). It clears all registrations for the given week and refreshes posted boards.
+- When a board is posted, the bot adds a fixed set of reaction emojis (see `BunkerManager.BunkerEmojis`) that map to bunker names `F1`–`F4` (front) and `B1`–`B12` (back).
+- Reaction handling behaviour:
+  - Users react to register/unregister for a bunker. Reacting again removes the user's registration for that bunker (toggle behaviour).
+  - The bot enforces per-alliance limits: maximum 1 Front bunker and 2 Back bunkers per alliance per week. Alliance tag is taken from any 3-letter role on the reacting user (uppercased), otherwise `UNKNOWN`.
+  - If an alliance already is at the limit for the side (front/back) and a new registration is attempted, the oldest alliance registration on that side is removed automatically and replaced with the new registration (the bot attempts to remove the corresponding reaction from the user who had the oldest registration).
+  - Message content is updated in real time when registrations change (the board message is edited to show current alliance lists per bunker).
+  - Registration state is persisted to `bunker_registrations.csv` under the configured data directory.
 
-	*Bunker-specific*:
-	- Bunker registrations are performed by reacting to the message posted by `!bunker`.
-	- A user may register up to three different bunkers; the fourth reaction swaps the oldest registration automatically. 
-	- The alliance tag used for the bunker list is taken from any 3-letter role the user has; if none is found the tag `UNKNOWN` is shown.
+### Voting (Gov) Behaviour (Summary)
+- Voting is reaction-based. An administrator (role `R5`) starts a vote with `!gov vote <week>` (or similar as implemented in `Commands/Gov`).
+- The bot posts a message listing up to 9 candidates and adds numeric emoji reactions (`1️⃣`–`9️⃣`).
+- Reaction additions are recorded as votes and restricted to one vote per user; changing reactions updates the stored vote. Invalid reactions are removed (requires the bot to have `Manage Messages`).
+- Votes are persisted in CSV under the data directory (`votes.csv`) and include guild-scoping in keys so multiple servers can run safely with a shared data directory.
 
-	**Username Display**
+## Roles and Permissions
+- Role checks are performed by role name (`SOS-S555-Access`, `R4`, `R5`) and via `RequireUserPermission(GuildPermission.SendMessages)` on command modules where appropriate.
+- `R5` role is used for sensitive operations like starting votes and posting/refreshing bunker boards.
+- Role checks are case-insensitive string comparisons; to improve stability, you can change these to role-id based checks.
 
-	All bot outputs consistently display usernames in `@username` format. The bot resolves user IDs through a three-tier system:
-	1. Current guild members (fastest)
-	2. Bot's global user cache
-	3. Discord API (ensures accuracy even for users not currently visible)
+## Username Display
+All bot outputs consistently display usernames in `@username` format. The bot resolves user IDs through a three-tier system:
+1. Current guild members (fastest)
+2. Bot's global user cache
+3. Discord API (ensures accuracy even for users not currently visible)
 
-	Note: Role checks are currently done by role name. If you prefer using role IDs (recommended for stability), I can update the code to check role IDs instead.
+Note: Role checks are currently done by role name. If you prefer using role IDs (recommended for stability), I can update the code to check role IDs instead.
 
+## Notes for Operators
+- The bot requires the Message Content Gateway Intent and (for certain features) the Manage Messages permission so it can edit messages and remove invalid reactions.
+- The bot logs command invocations to console and to `commands.log` in JSON lines for auditing.
 
-For signing up / keeping track:
-a command to sign yourself up  (EX: !gov register  week 21)
-a command to remove yourself (EX: !gov unregister week 21)
-parameters for specific weeks
-a command to list the registered weeks (EX: !gov list) (@player or Week 21 <-- to view a specific user / week, otherwise show all)
-some "admin" commands to override, but only should be used if the player themselves is unable to do it themselves for some reason. I can probably link permissions with the alliance tag + R4/5 or something - or just make it even more simple that you just ask me to do it if it's at all necessary
+## For Signing Up / Keeping Track
+- A command to sign yourself up (EX: `!gov register week 21`)
+- A command to remove yourself (EX: `!gov unregister week 21`)
+- Parameters for specific weeks
+- A command to list the registered weeks (EX: `!gov list`) (@player or Week 21 <-- to view a specific user/week, otherwise show all)
+- Some "admin" commands to override, but only should be used if the player themselves is unable to do it themselves for some reason.
 
 For selecting if multiple people have signed up (completely randomly):
-Select a random gov (EX: !gov raffle week 21)
+- Select a random gov (EX: `!gov raffle week 21`)
 
-Voting is now reaction‑based and automated. An administrator (role **R5**) starts a vote by providing a week; the bot automatically pulls registered candidates from the registrations file.
+In addition to the existing gov commands, you can now run `!gov help` for a short summary of usage.
 
-```
-!gov vote week21
-```
-
-The bot will:
-1. List all users registered for that week, numbered 1–9 (up to 9 candidates).
-2. Add emoji reactions (1️⃣–9️⃣) to the message.
-3. Record reactions as votes automatically.
-
-Rules and behaviour:
-- Each user may cast exactly one vote; changing the reaction removes the previous one.
-- Invalid reactions are removed from the message automatically (you must grant the bot *Manage Messages* for this to work).
-- Votes are stored per-guild, so the same poll name on different servers will not interfere.
-
-In addition to the existing gov commands you can now run `!gov help` for a short summary of usage.
-
----
-
-### Bunker registration
-
+### Bunker Registration
 A new `!bunker` command group provides an interface for alliance members to sign up for bunkers using reactions.
 
 ```
@@ -118,7 +105,7 @@ A new `!bunker` command group provides an interface for alliance members to sign
 !bunker help   # shows command syntax and rules
 ```
 
-When the bot posts the registration message you register by reacting with the number emoji corresponding to the bunker (F1=1️⃣, F2=2️⃣, …, B12=🔟 etc.).
+When the bot posts the registration message, you register by reacting with the number emoji corresponding to the bunker (F1=1️⃣, F2=2️⃣, …, B12=🔟 etc.).
 
 - You may register at most three bunkers; the fourth reaction will automatically remove your oldest registration and replace it with the new one.
 - Each registration includes an **alliance tag** derived from any 3‑letter role you possess; the tag appears next to your name in the list.
@@ -127,4 +114,5 @@ When the bot posts the registration message you register by reacting with the nu
 - Registrations are also stored per-guild, so multiple servers can use the same bot instance.
 
 Use `!bunker help` for a summary of this behaviour anytime.
+
 
