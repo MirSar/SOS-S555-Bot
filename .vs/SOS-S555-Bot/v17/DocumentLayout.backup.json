@@ -42,8 +42,7 @@
               "RelativeToolTip": "Bot.cs",
               "ViewState": "AgIAACcBAAAAAAAAAAAuwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-03-03T17:24:32Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-03T17:24:32Z"
             },
             {
               "$type": "Document",
@@ -51,12 +50,16 @@
               "Title": "BunkerCommand.cs",
               "DocumentMoniker": "D:\\Data\\Dropbox\\Software\\GIT\\SOS-S555-Bot\\SOS-S555-Bot\\Commands\\Bunker\\BunkerCommand.cs",
               "RelativeDocumentMoniker": "Commands\\Bunker\\BunkerCommand.cs",
-              "ToolTip": "D:\\Data\\Dropbox\\Software\\GIT\\SOS-S555-Bot\\SOS-S555-Bot\\Commands\\Bunker\\BunkerCommand.cs*",
-              "RelativeToolTip": "Commands\\Bunker\\BunkerCommand.cs*",
-              "ViewState": "AgIAAM4AAAAAAAAAAAAawOEAAAAAAAAAAAAAAA==",
+              "ToolTip": "D:\\Data\\Dropbox\\Software\\GIT\\SOS-S555-Bot\\SOS-S555-Bot\\Commands\\Bunker\\BunkerCommand.cs",
+              "RelativeToolTip": "Commands\\Bunker\\BunkerCommand.cs",
+              "ViewState": "AgIAAM4AAAAAAAAAAAAawN8AAAANAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-03-02T23:50:30.474Z",
               "EditorCaption": ""
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{56df62a4-05a3-4e5b-aa1a-99371ccfb997}"
             }
           ]
         }

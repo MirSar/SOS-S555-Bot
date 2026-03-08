@@ -66,7 +66,7 @@ When the bot is installed on multiple servers it keeps a single set of CSVs but 
 
 	*Bunker-specific*:
 	- Bunker registrations are performed by reacting to the message posted by `!bunker`.
-	- A user may register up to three different bunkers; the fourth reaction swaps the oldest registration automatically.
+	- A user may register up to three different bunkers; the fourth reaction swaps the oldest registration automatically. 
 	- The alliance tag used for the bunker list is taken from any 3-letter role the user has; if none is found the tag `UNKNOWN` is shown.
 
 	**Username Display**
